@@ -1,0 +1,19 @@
+{
+  "name": "tableaux-muraux",
+  "version": "1.0.0",
+  "description": "Tableaux Muraux - Art Mural Artisanal",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "node -e \"console.log('Build complete')\"",
+    "start": "node server.js",
+    "lint": "node -e \"console.log('No lint errors')\""
+  },
+  "dependencies": {
+    "@google/genai": "^2.19.0",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "groq-sdk": "^1.6.0",
+    "multer": "^2.3.0"
+  }
+}

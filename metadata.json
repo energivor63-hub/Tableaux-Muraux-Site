@@ -1,0 +1,6 @@
+{
+  "name": "Tableaux Muraux - Art Mural Artisanal",
+  "description": "Tableaux muraux artisanaux co-créés par IA et fabriqués à la main à Marrakech. Oragite et Canvas premium.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

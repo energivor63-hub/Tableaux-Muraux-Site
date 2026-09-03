@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Tableaux Muraux - Social Studio</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="social.css?v=3.0">
+</head>
+<body data-page="social">
+
+  <!-- Lien d'évitement accessibilité -->
+  <a href="#main-social-content" class="skip-link">Aller au contenu principal</a>
+
+  <!-- Navigation Publique Standard -->
+  <nav aria-label="Navigation principale">
+    <div class="nav-container">
+      <a href="index.html" class="logo" aria-label="Retour à l'accueil Tableaux Muraux"><span data-contenu="nav.brandName">Tableaux</span><span data-contenu="nav.brandExtension"> Muraux</span></a>
+      <ul class="nav-links">
+        <li><a href="index.html" data-contenu="nav.linkHome">Accueil</a></li>
+        <li><a href="index.html#galerie" data-contenu="nav.linkGallery">Galerie</a></li>
+        <li><a href="materials.html" data-contenu="nav.linkMaterials">Matériaux</a></li>
+        <li><a href="process.html" data-contenu="nav.linkProcess">Fabrication</a></li>
+        <li><a href="tour-de-controle.html" style="color: var(--primary, #C65D3B); font-weight: 600;">🗼 Tour de Contrôle</a></li>
+        <li><a href="https://wa.me/212648620364" class="btn-nav-wa" target="_blank" rel="noopener noreferrer" data-contenu="nav.btnWhatsapp">WhatsApp</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Conteneur Principal Social Studio -->
+  <div class="social-app-container">
+    
+    <!-- Barre latérale / Onglets -->
+    <aside class="social-sidebar" aria-label="Menu du studio social">
+      <div class="sidebar-header">
+        <h1 data-contenu="sidebar.title">Social Studio</h1>
+        <p data-contenu="sidebar.subtitle">Gestion & Planification Social Media</p>
+      </div>
+
+      <nav aria-label="Onglets du studio">
+        <ul class="social-nav-list">
+          <li>
+            <button class="social-tab-btn active" data-tab="tab-dashboard" aria-selected="true" role="tab">
+              <span class="tab-icon" aria-hidden="true">📊</span>
+              <span data-contenu="tabs.dashboard">Tableau de bord</span>
+            </button>
+          </li>
+          <li>
+            <button class="social-tab-btn" data-tab="tab-accounts" aria-selected="false" role="tab">
+              <span class="tab-icon" aria-hidden="true">📱</span>
+              <span data-contenu="tabs.accounts">Comptes</span>
+            </button>
+          </li>
+          <li>
+            <button class="social-tab-btn" data-tab="tab-composer" aria-selected="false" role="tab">
+              <span class="tab-icon" aria-hidden="true">✍️</span>
+              <span data-contenu="tabs.composer">Créer / Publier</span>
+            </button>
+          </li>
+          <li>
+            <button class="social-tab-btn" data-tab="tab-calendar" aria-selected="false" role="tab">
+              <span class="tab-icon" aria-hidden="true">📅</span>
+              <span data-contenu="tabs.calendar">Calendrier</span>
+            </button>
+          </li>
+          <li>
+            <button class="social-tab-btn" data-tab="tab-media" aria-selected="false" role="tab">
+              <span class="tab-icon" aria-hidden="true">📁</span>
+              <span data-contenu="tabs.media">Médiathèque</span>
+            </button>
+          </li>
+          <li>
+            <button class="social-tab-btn" data-tab="tab-posts" aria-selected="false" role="tab">
+              <span class="tab-icon" aria-hidden="true">📑</span>
+              <span data-contenu="tabs.posts">Publications</span>
+            </button>
+          </li>
+          <li>
+            <button class="social-tab-btn" data-tab="tab-analytics" aria-selected="false" role="tab">
+              <span class="tab-icon" aria-hidden="true">📈</span>
+              <span data-contenu="tabs.analytics">Statistiques</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- Zone principale -->
+    <main id="main-social-content" class="social-main-content" tabindex="-1">
+
+      <!-- 1. TABLEAU DE BORD -->
+      <section id="tab-dashboard" class="tab-panel active" role="tabpanel" aria-labelledby="tab-dashboard">
+        <div class="panel-header">
+          <div>
+            <h2>Vue d'ensemble</h2>
+            <p class="panel-subtitle">Performances globales et prochaines parutions</p>
+          </div>
+          <button class="btn btn-primary" id="btn-quick-create">+ Nouveau Post</button>
+        </div>
+
+        <div class="kpi-grid" id="kpi-container">
+          <!-- Injecté dynamiquement par JS -->
+        </div>
+
+        <div class="card">
+          <h3 style="margin-bottom: 1rem; font-size: 1.25rem;">⏳ Prochaines publications programmées</h3>
+          <div id="dashboard-upcoming-list">
+            <!-- Injecté par JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. GESTION DES COMPTES -->
+      <section id="tab-accounts" class="tab-panel" role="tabpanel" aria-labelledby="tab-accounts">
+        <div class="panel-header">
+          <div>
+            <h2>Comptes Réseaux Sociaux</h2>
+            <p class="panel-subtitle">Statut des connexions et synchronisation simulée</p>
+          </div>
+          <button class="btn btn-outline" id="btn-sync-all">🔄 Tout synchroniser</button>
+        </div>
+
+        <div class="accounts-grid" id="accounts-container">
+          <!-- Injecté dynamiquement par JS -->
+        </div>
+      </section>
+
+      <!-- 3. CRÉATEUR DE PUBLICATION -->
+      <section id="tab-composer" class="tab-panel" role="tabpanel" aria-labelledby="tab-composer">
+        <div class="panel-header">
+          <div>
+            <h2>Composer une Publication</h2>
+            <p class="panel-subtitle">Rédigez, choisissez vos visuels et visualisez l'aperçu en temps réel</p>
+          </div>
+        </div>
+
+        <div class="composer-grid">
+          <!-- Formulaire -->
+          <div class="card">
+            <form id="composer-form">
+              <div class="form-group">
+                <label class="form-label">Réseaux cibles</label>
+                <div class="platform-toggles">
+                  <label class="platform-toggle-label">
+                    <input type="checkbox" name="platform" value="instagram" checked> 📸 Instagram
+                  </label>
+                  <label class="platform-toggle-label">
+                    <input type="checkbox" name="platform" value="facebook" checked> 👥 Facebook
+                  </label>
+                  <label class="platform-toggle-label">
+                    <input type="checkbox" name="platform" value="pinterest"> 📌 Pinterest
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="post-title" class="form-label">Titre de travail / Objet interne</label>
+                <input type="text" id="post-title" class="form-control" placeholder="Ex: Focus Collection Patio..." required>
+              </div>
+
+              <div class="form-group">
+                <label for="post-image-select" class="form-label">Visuel associé</label>
+                <select id="post-image-select" class="form-select">
+                  <!-- Rempli dynamiquement depuis CONTENU_SITE.produits et la médiathèque -->
+                </select>
+              </div>
+
+              <!-- Galerie visuelle intégrée (clic direct = sélection du visuel) -->
+              <div class="form-group">
+                <span class="form-label">Ou cliquez directement sur un produit de la galerie</span>
+                <div class="media-grid composer-gallery" id="composer-media-grid"></div>
+              </div>
+
+              <div class="form-group">
+                <label for="post-text" class="form-label">Texte de la publication</label>
+                <textarea id="post-text" class="form-textarea" placeholder="Rédigez la légende de votre publication..."></textarea>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Suggestions de Hashtags</label>
+                <div class="hashtag-chips" id="hashtag-suggestions">
+                  <button type="button" class="hashtag-chip" data-tag="#TableauxMuraux">#TableauxMuraux</button>
+                  <button type="button" class="hashtag-chip" data-tag="#ArtMuralMaroc">#ArtMuralMaroc</button>
+                  <button type="button" class="hashtag-chip" data-tag="#MarrakechDeco">#MarrakechDeco</button>
+                  <button type="button" class="hashtag-chip" data-tag="#Oragite">#Oragite</button>
+                  <button type="button" class="hashtag-chip" data-tag="#CadreBois">#CadreBois</button>
+                  <button type="button" class="hashtag-chip" data-tag="#MadeInMarrakech">#MadeInMarrakech</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="post-date" class="form-label">Date & Heure de planification</label>
+                <input type="datetime-local" id="post-date" class="form-control">
+              </div>
+
+              <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.5rem;">
+                <button type="button" id="btn-save-draft" class="btn btn-outline">💾 Enregistrer Brouillon</button>
+                <button type="button" id="btn-schedule-post" class="btn btn-secondary">⏰ Programmer</button>
+                <button type="submit" id="btn-publish-now" class="btn btn-primary">🚀 Publier Immédiatement</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Aperçu Direct Mockup -->
+          <div class="preview-pane">
+            <h3 style="margin-bottom: 1rem; font-size: 1.1rem; color: var(--secondary);">Aperçu en temps réel</h3>
+            <div class="mockup-container">
+              <div class="mockup-header">
+                <img id="mockup-avatar" class="mockup-avatar" src="" alt="Avatar">
+                <div class="mockup-meta">
+                  <strong id="mockup-account-name">Tableaux Muraux</strong>
+                  <span id="mockup-platform-tag">Instagram • Sponsorisé / Post</span>
+                </div>
+              </div>
+              <img id="mockup-img" class="mockup-image" src="" alt="Visuel de la publication">
+              <div class="mockup-body">
+                <p id="mockup-text">Votre texte apparaîtra ici en temps réel...</p>
+                <p id="mockup-hashtags" class="mockup-hashtags"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. CALENDRIER ÉDITORIAL -->
+      <section id="tab-calendar" class="tab-panel" role="tabpanel" aria-labelledby="tab-calendar">
+        <div class="panel-header">
+          <div>
+            <h2>Calendrier Éditorial</h2>
+            <p class="panel-subtitle">Planning mensuel des publications prévues</p>
+          </div>
+          <div class="calendar-controls">
+            <button class="btn btn-outline btn-sm" id="cal-prev">◀ Précédent</button>
+            <strong id="cal-month-title" style="font-size: 1.1rem; color: var(--secondary);">Août 2026</strong>
+            <button class="btn btn-outline btn-sm" id="cal-next">Suivant ▶</button>
+          </div>
+        </div>
+
+        <div class="calendar-grid" id="calendar-days-container">
+          <!-- Entêtes des jours -->
+          <div class="calendar-day-head">Lun</div>
+          <div class="calendar-day-head">Mar</div>
+          <div class="calendar-day-head">Mer</div>
+          <div class="calendar-day-head">Jeu</div>
+          <div class="calendar-day-head">Ven</div>
+          <div class="calendar-day-head">Sam</div>
+          <div class="calendar-day-head">Dim</div>
+          <!-- Cellules injectées dynamiquement par JS -->
+        </div>
+      </section>
+
+      <!-- 5. MÉDIATHÈQUE -->
+      <section id="tab-media" class="tab-panel" role="tabpanel" aria-labelledby="tab-media">
+        <div class="panel-header">
+          <div>
+            <h2>Médiathèque Visuelle</h2>
+            <p class="panel-subtitle">Catalogue de créations et visuels d'atelier disponibles</p>
+          </div>
+        </div>
+
+        <div class="media-filters" id="media-filter-buttons">
+          <button class="btn btn-sm btn-primary filter-media-btn active" data-filter="all">Tous les médias</button>
+          <button class="btn btn-sm btn-outline filter-media-btn" data-filter="Catalogue">Catalogue Produits</button>
+          <button class="btn btn-sm btn-outline filter-media-btn" data-filter="Atelier">Atelier & Coulisses</button>
+          <button class="btn btn-sm btn-outline filter-media-btn" data-filter="Ambiance">Ambiances</button>
+        </div>
+
+        <div class="media-grid" id="media-grid-container">
+          <!-- Injecté par JS -->
+        </div>
+      </section>
+
+      <!-- 6. LISTE DES PUBLICATIONS -->
+      <section id="tab-posts" class="tab-panel" role="tabpanel" aria-labelledby="tab-posts">
+        <div class="panel-header">
+          <div>
+            <h2>Historique des Publications</h2>
+            <p class="panel-subtitle">Brouillons, parutions actives et programmées</p>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <select id="filter-posts-status" class="form-select" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">
+              <option value="all">Tous les statuts</option>
+              <option value="publie">Publiés</option>
+              <option value="programme">Programmés</option>
+              <option value="brouillon">Brouillons</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" aria-label="Liste des publications">
+            <thead>
+              <tr>
+                <th>Visuel</th>
+                <th>Titre / Message</th>
+                <th>Réseaux</th>
+                <th>Statut</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="posts-table-body">
+              <!-- Injecté dynamiquement par JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 7. STATISTIQUES & ANALYTICS -->
+      <section id="tab-analytics" class="tab-panel" role="tabpanel" aria-labelledby="tab-analytics">
+        <div class="panel-header">
+          <div>
+            <h2>Statistiques & Engagements</h2>
+            <p class="panel-subtitle">Performances comparées par réseau social</p>
+          </div>
+        </div>
+
+        <div class="analytics-chart-card">
+          <h3>Répartition des Abonnés par Plateforme</h3>
+          <div class="bar-chart-group" id="followers-chart">
+            <!-- Injecté par JS -->
+          </div>
+        </div>
+
+        <div class="analytics-chart-card">
+          <h3>Taux d'Engagement Moyen (%)</h3>
+          <div class="bar-chart-group" id="engagement-chart">
+            <!-- Injecté par JS -->
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <!-- Footer Standard avec Lien Discret -->
+  <footer>
+    <div class="footer-container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <h3 data-contenu="footer.brandName">Tableaux Muraux</h3>
+          <p data-contenu="footer.desc">Art mural d'exception co-créé par IA et façonné à la main à Marrakech.</p>
+        </div>
+        <div class="footer-col">
+          <h3 data-contenu="footer.navTitle">Navigation</h3>
+          <ul>
+            <li><a href="index.html" data-contenu="footer.linkHome">Accueil</a></li>
+            <li><a href="materials.html" data-contenu="footer.linkMaterials">Matériaux</a></li>
+            <li><a href="process.html" data-contenu="footer.linkProcess">Fabrication</a></li>
+            <li><a href="privacy.html" data-contenu="footer.linkPrivacy">Confidentialité</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h3 data-contenu="footer.contactTitle">Contact</h3>
+          <ul>
+            <li data-contenu="footer.contactLocation">Marrakech, Maroc</li>
+            <li data-contenu="footer.contactWhatsapp">WhatsApp : +212 6 48 62 03 64</li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p data-contenu="footer.copyright">&copy; 2026 Tableaux Muraux. Tous droits réservés.</p>
+        <!-- Lien secret et discret -->
+        <a href="social.html" class="footer-secret-link" title="Administration Social Media" data-contenu="footer.socialStudioLink">Social Studio</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Chargement des scripts dans l'ordre strict prescrit -->
+  <script src="contenu.js?v=3.0"></script>
+  <script src="injection-contenu.js?v=3.0"></script>
+  <script src="social-data.js?v=3.0"></script>
+  <script src="social-app.js?v=3.0"></script>
+</body>
+</html>

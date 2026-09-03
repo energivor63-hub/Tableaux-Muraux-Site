@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Découvrez nos matériaux premium : bâche Oragite® brillante et toile canvas artistique. Qualité professionnelle pour vos tableaux muraux.">
+    <title>Nos Matériaux Premium | Tableaux Muraux</title>
+    
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #C65D3B;
+            --primary-dark: #A84A2D;
+            --secondary: #2C3E50;
+            --accent: #D4A574;
+            --dark: #1a1a1a;
+            --light: #F8F5F0;
+            --gray: #6B7280;
+            --success: #10B981;
+            --gold: #D4AF37;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background: var(--light);
+        }
+
+        h1, h2, h3, h4 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 20px rgba(0,0,0,0.05);
+            z-index: 1000;
+            padding: 1rem 0;
+        }
+
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--secondary);
+            font-weight: 400;
+        }
+
+        .nav-links {
+            display: flex;
+            list-style: none;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--dark);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        .btn-nav {
+            background: var(--primary);
+            color: white !important;
+            padding: 0.6rem 1.5rem;
+            border-radius: 50px;
+            transition: all 0.3s;
+        }
+
+        .btn-nav:hover {
+            background: var(--primary-dark);
+        }
+
+        /* Hero */
+        .page-hero {
+            margin-top: 80px;
+            padding: 5rem 0;
+            background: linear-gradient(135deg, var(--secondary) 0%, #1a252f 100%);
+            color: white;
+            text-align: center;
+        }
+
+        .page-hero h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .page-hero p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .breadcrumb {
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumb a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        /* Material Hero */
+        .material-hero {
+            padding: 5rem 0;
+            background: white;
+        }
+
+        .material-hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 4rem;
+            align-items: center;
+        }
+
+        .material-visual {
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1;
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            margin: 0 auto;
+            background: #e2d9cc;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+        }
+
+        .material-visual.oragite {
+            box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+        }
+
+        .material-visual.canvas {
+            box-shadow: 0 20px 60px rgba(198, 93, 59, 0.2);
+        }
+
+        .material-visual .zone-photo,
+        .use-case-visual-frame .zone-photo {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
+            display: block;
+        }
+
+        .material-info h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .material-info .subtitle {
+            color: var(--gray);
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+        }
+
+        .features-list {
+            list-style: none;
+            margin-top: 2rem;
+        }
+
+        .features-list li {
+            padding: 1rem 0;
+            padding-left: 2.5rem;
+            position: relative;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .features-list li:last-child {
+            border-bottom: none;
+        }
+
+        .features-list li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            width: 35px;
+            height: 35px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .features-list h4 {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.1rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .features-list p {
+            color: var(--gray);
+            margin: 0;
+            font-size: 0.95rem;
+        }
+
+        /* Comparison */
+        .comparison-section {
+            background: var(--light);
+            padding: 5rem 0;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .section-header h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .section-header p {
+            color: var(--gray);
+            font-size: 1.1rem;
+        }
+
+        .comparison-table {
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.05);
+        }
+
+        .comparison-header {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            background: var(--secondary);
+            color: white;
+            padding: 1.5rem;
+            font-weight: 600;
+        }
+
+        .comparison-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            padding: 1.2rem 1.5rem;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            align-items: center;
+        }
+
+        .comparison-row:last-child {
+            border-bottom: none;
+        }
+
+        .comparison-row:nth-child(even) {
+            background: rgba(0,0,0,0.02);
+        }
+
+        .feature-name {
+            font-weight: 500;
+        }
+
+        .feature-value {
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .check {
+            color: var(--success);
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .rating {
+            display: flex;
+            gap: 0.2rem;
+            color: var(--gold);
+        }
+
+        /* Use Cases */
+        .use-cases-section {
+            padding: 5rem 0;
+            background: white;
+        }
+
+        .use-cases-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 3rem;
+            margin-top: 3rem;
+        }
+
+        .use-case-card {
+            background: var(--light);
+            padding: 2.5rem;
+            border-radius: 20px;
+            transition: all 0.3s;
+        }
+
+        .use-case-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .use-case-visual-frame {
+            width: 100%;
+            height: 220px;
+            border-radius: 14px;
+            position: relative;
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+            background: #e5e5e5;
+        }
+
+        .use-case-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .use-case-card p {
+            color: var(--gray);
+            margin-bottom: 1.5rem;
+            line-height: 1.7;
+        }
+
+        .use-case-rooms {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .room-tag {
+            background: white;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--primary);
+        }
+
+        /* Frames Section */
+        .frames-section {
+            background: linear-gradient(135deg, var(--secondary) 0%, #1a252f 100%);
+            color: white;
+            padding: 5rem 0;
+        }
+
+        .frames-section .section-header h2 {
+            color: white;
+        }
+
+        .frames-section .section-header p {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .frames-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+
+        .frame-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2rem;
+            border-radius: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+        }
+
+        .frame-card:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-5px);
+        }
+
+        .frame-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .frame-card h4 {
+            margin-bottom: 0.5rem;
+            color: var(--accent);
+        }
+
+        .frame-card p {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+        }
+
+        /* Quality Guarantee */
+        .quality-section {
+            background: var(--light);
+            padding: 5rem 0;
+        }
+
+        .quality-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+        }
+
+        .quality-card {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+            transition: all 0.3s;
+        }
+
+        .quality-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .quality-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .quality-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+        }
+
+        .quality-card p {
+            color: var(--gray);
+            line-height: 1.7;
+        }
+
+        /* CTA */
+        .cta-section {
+            padding: 5rem 0;
+            background: white;
+            text-align: center;
+        }
+
+        .cta-section h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .cta-section p {
+            color: var(--gray);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 15px rgba(198, 93, 59, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-3px);
+        }
+
+        .btn-whatsapp {
+            background: #25D366;
+            color: white;
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn-whatsapp:hover {
+            background: #1faa52;
+            transform: translateY(-3px);
+        }
+
+        .btn-whatsapp svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--dark);
+            color: white;
+            padding: 3rem 0 2rem;
+            text-align: center;
+        }
+
+        footer .logo {
+            color: white;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        footer p {
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0.5rem 0;
+        }
+
+        /* Floating WhatsApp Button */
+        .whatsapp-float {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 64px;
+            height: 64px;
+            background: #25D366;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-decoration: none;
+            box-shadow: 0 5px 20px rgba(37, 211, 102, 0.4);
+            z-index: 999;
+            transition: all 0.3s;
+            animation: pulse 2s infinite;
+        }
+
+        .whatsapp-float svg {
+            width: 36px;
+            height: 36px;
+            fill: white;
+        }
+
+        .whatsapp-float:hover {
+            transform: scale(1.1);
+            background: #1faa52;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 5px 20px rgba(37, 211, 102, 0.4); }
+            50% { box-shadow: 0 5px 30px rgba(37, 211, 102, 0.7); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .material-hero-grid,
+            .use-cases-grid {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 2.5rem;
+            }
+
+            .material-visual {
+                max-width: 380px;
+            }
+
+            .use-case-visual-frame {
+                height: 180px;
+            }
+
+            .comparison-header,
+            .comparison-row {
+                grid-template-columns: 2fr 1fr 1fr;
+                font-size: 0.85rem;
+                padding: 0.8rem;
+            }
+
+            .page-hero h1 {
+                font-size: 2rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body data-page="materials">
+    <!-- Navigation -->
+    <nav>
+        <div class="container">
+            <a href="index.html" class="logo"><span data-contenu="nav.brandName">Tableaux</span><span data-contenu="nav.brandExtension"> Muraux</span></a>
+            <ul class="nav-links">
+                <li><a href="process.html" data-contenu="nav.linkProcess">Notre Processus</a></li>
+                <li><a href="index.html#gallery" data-contenu="nav.linkGallery">Galerie</a></li>
+                <li><a href="tour-de-controle.html" style="color: var(--primary); font-weight: 600;">🗼 Tour de Contrôle</a></li>
+                <li><a href="index.html#testimonials" data-contenu="nav.linkReviews">Avis</a></li>
+                <li><a href="index.html#contact" class="btn-nav" data-contenu="nav.btnOrder">Commander</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="page-hero">
+        <div class="container">
+            <h1 data-contenu="hero.title">Nos Matériaux Premium</h1>
+            <p data-contenu="hero.subtitle">Des matériaux de qualité professionnelle pour des tableaux qui durent toute une vie</p>
+            <div class="breadcrumb">
+                <a href="index.html" data-contenu="hero.breadcrumbHome">Accueil</a> → <span data-contenu="hero.breadcrumbCurrent">Nos Matériaux</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Oragite Section -->
+    <section class="material-hero">
+        <div class="container">
+            <div class="material-hero-grid">
+                <div class="material-visual oragite">
+                    <img class="zone-photo"
+                         src="images/bache-oragite.jpg"
+                         alt="Rouleau de bâche Oragite® brillante"
+                         data-contenu-img="oragite.visual"
+                         loading="lazy">
+                </div>
+                <div class="material-info">
+                    <h2 data-contenu="oragite.title">Bâche Oragite® Brillante</h2>
+                    <p class="subtitle" data-contenu-html="oragite.subtitle">La référence en matière d'impression grand format. <strong>Oragite®</strong> est une marque du groupe allemand <strong>ORAFOL</strong>, reconnue mondialement pour la qualité professionnelle de ses supports d'impression numérique.</p>
+                    
+                    <ul class="features-list">
+                        <li>
+                            <h4 data-contenu="oragite.features.0.title">Couleurs vibrantes et éclatantes</h4>
+                            <p data-contenu="oragite.features.0.desc">La finition brillante fait ressortir les couleurs avec une intensité exceptionnelle, idéale pour des visuels percutants.</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="oragite.features.1.title">Résistance</h4>
+                            <p data-contenu="oragite.features.1.desc">Protection contre le fading pour une durabilité exceptionnelle, adaptée à une exposition prolongée.</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="oragite.features.2.title">Qualité professionnelle</h4>
+                            <p data-contenu="oragite.features.2.desc">Support privilégié par les imprimeurs et les professionnels de la communication visuelle pour des impressions haut de gamme.</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="oragite.features.3.title">Facile à nettoyer</h4>
+                            <p data-contenu="oragite.features.3.desc">Surface lisse en PVC qui se nettoie d'un simple coup de chiffon humide, sans altération de l'impression.</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="oragite.features.4.title">Idéal pour les pièces modernes</h4>
+                            <p data-contenu="oragite.features.4.desc">Parfait pour les intérieurs contemporains, les bureaux, les commerces et les espaces d'exposition.</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Canvas Section -->
+    <section class="material-hero" style="background: var(--light);">
+        <div class="container">
+            <div class="material-hero-grid">
+                <div class="material-info">
+                    <h2 data-contenu="canvas.title">Toile Canvas Artistique</h2>
+                    <p class="subtitle" data-contenu-html="canvas.subtitle">La toile canvas offre un rendu authentique et traditionnel, rappelant les grandes œuvres classiques. Parfaite pour créer une atmosphère chaleureuse et artistique.</p>
+                    
+                    <ul class="features-list">
+                        <li>
+                            <h4 data-contenu="canvas.features.0.title">Texture naturelle du tissu</h4>
+                            <p data-contenu="canvas.features.0.desc">Toucher authentique qui rappelle les peintures traditionnelles</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="canvas.features.1.title">Rendu artistique authentique</h4>
+                            <p data-contenu="canvas.features.1.desc">Aspect galerie d'art avec profondeur et relief</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="canvas.features.2.title">Résistance au temps</h4>
+                            <p data-contenu="canvas.features.2.desc">Matériau noble qui se bonifie avec les années</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="canvas.features.3.title">Montage sur châssis bois</h4>
+                            <p data-contenu="canvas.features.3.desc">Structure solide et stable pour une présentation parfaite</p>
+                        </li>
+                        <li>
+                            <h4 data-contenu="canvas.features.4.title">Idéal pour les intérieurs classiques</h4>
+                            <p data-contenu="canvas.features.4.desc">Parfait pour les décors bohèmes, rustiques et traditionnels</p>
+                        </li>
+                    </ul>
+                </div>
+                <div class="material-visual canvas">
+                    <img class="zone-photo"
+                         src="images/toile-canvas.jpg"
+                         alt="Rouleau de toile canvas artistique"
+                         data-contenu-img="canvas.visual"
+                         loading="lazy">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Comparison -->
+    <section class="comparison-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 data-contenu="comparison.title">Comparaison détaillée</h2>
+                <p data-contenu="comparison.subtitle">Choisissez le matériau idéal pour votre projet</p>
+            </div>
+
+            <div class="comparison-table">
+                <div class="comparison-header">
+                    <div data-contenu="comparison.thFeature">Caractéristique</div>
+                    <div data-contenu="comparison.thOragite">Oragite® Brillante</div>
+                    <div data-contenu="comparison.thCanvas">Canvas Artistique</div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name" data-contenu="comparison.row1.name">Finition</div>
+                    <div class="feature-value" data-contenu="comparison.row1.oragite">Brillante</div>
+                    <div class="feature-value" data-contenu="comparison.row1.canvas">Mate texturée</div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name" data-contenu="comparison.row2.name">Intensité des couleurs</div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row2.oragiteRating">★★★★★</div>
+                    </div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row2.canvasRating">★★★★☆</div>
+                    </div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name" data-contenu="comparison.row3.name">Résistance UV</div>
+                    <div class="feature-value"><span class="check" data-contenu="comparison.row3.oragiteCheck">✓</span></div>
+                    <div class="feature-value"><span class="check" data-contenu="comparison.row3.canvasCheck">✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name" data-contenu="comparison.row4.name">Facilité d'entretien</div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row4.oragiteRating">★★★★★</div>
+                    </div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row4.canvasRating">★★★☆☆</div>
+                    </div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name" data-contenu="comparison.row5.name">Aspect traditionnel</div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row5.oragiteRating">★★★☆☆</div>
+                    </div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row5.canvasRating">★★★★★</div>
+                    </div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name" data-contenu="comparison.row6.name">Style moderne</div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row6.oragiteRating">★★★★★</div>
+                    </div>
+                    <div class="feature-value">
+                        <div class="rating" data-contenu="comparison.row6.canvasRating">★★★☆☆</div>
+                    </div>
+                </div>
+                <div class="comparison-row">
+                    <div class="feature-name" data-contenu="comparison.row7.name">Prix (taille standard)</div>
+                    <div class="feature-value" data-contenu="comparison.row7.oragite">À partir de 450 MAD</div>
+                    <div class="feature-value" data-contenu="comparison.row7.canvas">À partir de 550 MAD</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Use Cases -->
+    <section class="use-cases-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 data-contenu="useCases.title">Quel matériau pour quelle pièce ?</h2>
+                <p data-contenu="useCases.subtitle">Nos recommandations selon l'ambiance souhaitée</p>
+            </div>
+
+            <div class="use-cases-grid">
+                <div class="use-case-card">
+                    <div class="use-case-visual-frame">
+                        <img class="zone-photo"
+                             src="images/hero-marrakech.jpg"
+                             alt="Ambiance salon contemporain avec tableau Oragite"
+                             data-contenu-img="useCases.cardOragite.visual"
+                             loading="lazy">
+                    </div>
+                    <h3 data-contenu="useCases.cardOragite.title">Oragite® Brillante</h3>
+                    <p data-contenu="useCases.cardOragite.desc">Idéale pour les espaces modernes qui ont besoin d'éclat et de luminosité. La finition brillante capte la lumière et dynamise la pièce.</p>
+                    <div class="use-case-rooms">
+                        <span class="room-tag" data-contenu="useCases.cardOragite.rooms.0">🛋️ Salon moderne</span>
+                        <span class="room-tag" data-contenu="useCases.cardOragite.rooms.1">🏢 Bureau</span>
+                        <span class="room-tag" data-contenu="useCases.cardOragite.rooms.2">🍽️ Salle à manger</span>
+                        <span class="room-tag" data-contenu="useCases.cardOragite.rooms.3">🏪 Commerce</span>
+                    </div>
+                </div>
+
+                <div class="use-case-card">
+                    <div class="use-case-visual-frame">
+                        <img class="zone-photo"
+                             src="images/detail_texture.jpg"
+                             alt="Ambiance riad chaleureux avec tableau Toile Canvas"
+                             data-contenu-img="useCases.cardCanvas.visual"
+                             loading="lazy">
+                    </div>
+                    <h3 data-contenu="useCases.cardCanvas.title">Canvas Artistique</h3>
+                    <p data-contenu="useCases.cardCanvas.desc">Parfaite pour créer une atmosphère chaleureuse et authentique. La texture naturelle du canvas apporte du caractère et de l'élégance.</p>
+                    <div class="use-case-rooms">
+                        <span class="room-tag" data-contenu="useCases.cardCanvas.rooms.0">🛏️ Chambre</span>
+                        <span class="room-tag" data-contenu="useCases.cardCanvas.rooms.1">📚 Bibliothèque</span>
+                        <span class="room-tag" data-contenu="useCases.cardCanvas.rooms.2">🏡 Riad</span>
+                        <span class="room-tag" data-contenu="useCases.cardCanvas.rooms.3">☕ Café</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Frames Section -->
+    <section class="frames-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 data-contenu="frames.title">Nos Cadres en Bois</h2>
+                <p data-contenu="frames.subtitle">Fabriqués à la main par nos artisans de Marrakech</p>
+            </div>
+
+            <div class="frames-grid">
+                <div class="frame-card">
+                    <div class="frame-icon" data-contenu="frames.item1.icon">⬜</div>
+                    <h4 data-contenu="frames.item1.title">Rectangulaire</h4>
+                    <p data-contenu="frames.item1.desc">Format classique et élégant</p>
+                </div>
+                <div class="frame-card">
+                    <div class="frame-icon" data-contenu="frames.item2.icon">⬛</div>
+                    <h4 data-contenu="frames.item2.title">Carré</h4>
+                    <p data-contenu="frames.item2.desc">Moderne et équilibré</p>
+                </div>
+                <div class="frame-card">
+                    <div class="frame-icon" data-contenu="frames.item3.icon">📏</div>
+                    <h4 data-contenu="frames.item3.title">Panoramique</h4>
+                    <p data-contenu="frames.item3.desc">Format large et impactant</p>
+                </div>
+                <div class="frame-card">
+                    <div class="frame-icon" data-contenu="frames.item4.icon">🎯</div>
+                    <h4 data-contenu="frames.item4.title">Sur Mesure</h4>
+                    <p data-contenu="frames.item4.desc">Dimensions personnalisées</p>
+                </div>
+                <div class="frame-card">
+                    <div class="frame-icon" data-contenu="frames.item5.icon">🪵</div>
+                    <h4 data-contenu="frames.item5.title">Bois Naturel</h4>
+                    <p data-contenu="frames.item5.desc">Finition brute authentique</p>
+                </div>
+                <div class="frame-card">
+                    <div class="frame-icon" data-contenu="frames.item6.icon">⚫</div>
+                    <h4 data-contenu="frames.item6.title">Bois Noir</h4>
+                    <p data-contenu="frames.item6.desc">Élégance contemporaine</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quality Guarantee -->
+    <section class="quality-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 data-contenu="quality.title">Notre Garantie Qualité</h2>
+                <p data-contenu="quality.subtitle">Nous nous engageons sur la qualité de chaque tableau</p>
+            </div>
+
+            <div class="quality-grid">
+                <div class="quality-card">
+                    <div class="quality-icon" data-contenu="quality.item1.icon">🏆</div>
+                    <h3 data-contenu="quality.item1.title">Matériaux Premium</h3>
+                    <p data-contenu="quality.item1.desc">Uniquement des matériaux de marques reconnues mondialement</p>
+                </div>
+                <div class="quality-card">
+                    <div class="quality-icon" data-contenu="quality.item2.icon">🔨</div>
+                    <h3 data-contenu="quality.item2.title">Artisanat Local</h3>
+                    <p data-contenu="quality.item2.desc">Cadres fabriqués à la main par des artisans de Marrakech</p>
+                </div>
+                <div class="quality-card">
+                    <div class="quality-icon" data-contenu="quality.item3.icon">✅</div>
+                    <h3 data-contenu="quality.item3.title">Contrôle Rigoureux</h3>
+                    <p data-contenu="quality.item3.desc">Chaque tableau inspecté avant expédition</p>
+                </div>
+                <div class="quality-card">
+                    <div class="quality-icon" data-contenu="quality.item4.icon">💯</div>
+                    <h3 data-contenu="quality.item4.title">Satisfaction Garantie</h3>
+                    <p data-contenu="quality.item4.desc">Si vous n'êtes pas satisfait, nous trouvons une solution</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+        <div class="container">
+            <h2 data-contenu="cta.title">Choisissez votre matériau idéal</h2>
+            <p data-contenu="cta.subtitle">Contactez-nous pour discuter de votre projet et obtenir des conseils personnalisés</p>
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <a href="https://wa.me/212648620364?text=Bonjour%20Tableaux%20Muraux%20!%20Je%20souhaite%20des%20conseils%20sur%20le%20choix%20du%20matériau%20pour%20mon%20tableau." data-contenu-wa="cta.whatsappMessage" class="btn btn-whatsapp" aria-label="Demander conseil sur WhatsApp">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                    </svg>
+                    <span data-contenu="cta.btnWhatsapp">Demander conseil</span>
+                </a>
+                <a href="index.html#gallery" class="btn btn-primary" data-contenu="cta.btnGallery">
+                    Voir la galerie →
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <a href="index.html" class="logo"><span data-contenu="footer.brandName">Tableaux</span><span style="color: var(--accent);" data-contenu="footer.brandExtension"> Muraux</span></a>
+            <p data-contenu="footer.desc">Art mural artisanal, co-créé par IA et fabriqué à la main à Marrakech</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <p data-contenu="footer.copyright">&copy; 2026 Tableaux Muraux. Tous droits réservés.</p>
+                <a href="social.html" style="opacity: 0.45; font-size: 0.8em; color: rgba(255,255,255,0.7); text-decoration: none;" title="Administration Social Media" data-contenu="footer.socialStudioLink">Social Studio</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Floating WhatsApp Button with Official Logo -->
+    <a href="https://wa.me/212648620364?text=Bonjour%20Tableaux%20Muraux%20!" data-contenu-wa="cta.whatsappMessage" class="whatsapp-float" aria-label="Contactez-nous sur WhatsApp">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 175.216 175.552" aria-hidden="true">
+            <defs>
+                <linearGradient id="wa-grad" x1="85.915" x2="86.535" y1="32.567" y2="137.092" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#57d163"/>
+                    <stop offset="1" stop-color="#23b33a"/>
+                </linearGradient>
+                <filter id="wa-shadow" width="1.115" height="1.114" x="-.057" y="-.057" color-interpolation-filters="sRGB">
+                    <feGaussianBlur stdDeviation="3.531"/>
+                </filter>
+            </defs>
+            <path fill="#b3b3b3" d="m54.532 138.45 2.235 1.324c9.387 5.571 20.15 8.518 31.126 8.523h.023c33.707 0 61.139-27.426 61.153-61.135.006-16.335-6.349-31.696-17.895-43.251A60.75 60.75 0 0 0 87.94 25.983c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.312-6.179 22.558zm-40.811 23.544L24.16 123.88c-6.438-11.154-9.825-23.808-9.821-36.772.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z" filter="url(#wa-shadow)"/>
+            <path fill="#fff" d="m12.966 161.238 10.439-38.114a73.42 73.42 0 0 1-9.821-36.772c.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z"/>
+            <path fill="url(#wa-grad)" d="M87.184 25.227c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.313-6.179 22.558 23.146-6.069 2.235 1.324c9.387 5.571 20.15 8.517 31.126 8.523h.023c33.707 0 61.14-27.426 61.153-61.135a60.75 60.75 0 0 0-17.895-43.251 60.75 60.75 0 0 0-43.235-17.928z"/>
+            <path fill="#fff" fill-rule="evenodd" d="M68.772 55.603c-1.378-3.061-2.828-3.123-4.137-3.176l-3.524-.043c-1.226 0-3.218.46-4.902 2.3s-6.435 6.287-6.435 15.332 6.588 17.785 7.506 19.013 12.718 20.381 31.405 27.75c15.529 6.124 18.689 4.906 22.061 4.6s10.877-4.447 12.408-8.74 1.532-7.971 1.073-8.74-1.685-1.226-3.525-2.146-10.877-5.367-12.562-5.981-2.91-.919-4.137.921-4.746 5.979-5.819 7.206-2.144 1.381-3.984.462-7.76-2.861-14.784-9.124c-5.465-4.873-9.154-10.891-10.228-12.73s-.114-2.835.808-3.751c.825-.824 1.838-2.147 2.759-3.22s1.224-1.84 1.836-3.065.307-2.301-.153-3.22-4.032-10.011-5.666-13.647"/>
+        </svg>
+    </a>
+
+    <!-- Scripts de pilotage du contenu -->
+    <script src="contenu.js"></script>
+    <script src="injection-contenu.js"></script>
+</body>
+</html>

@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Découvrez notre processus créatif unique : co-création IA + artisanat marocain. De l'idée à l'œuvre d'art murale.">
+    <title>Notre Processus Créatif | Tableaux Muraux</title>
+    
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #C65D3B;
+            --primary-dark: #A84A2D;
+            --secondary: #2C3E50;
+            --accent: #D4A574;
+            --dark: #1a1a1a;
+            --light: #F8F5F0;
+            --gray: #6B7280;
+            --success: #10B981;
+            --gold: #D4AF37;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background: var(--light);
+        }
+
+        h1, h2, h3, h4 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 2px 20px rgba(0,0,0,0.05);
+            z-index: 1000;
+            padding: 1rem 0;
+        }
+
+        nav .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .logo span {
+            color: var(--secondary);
+            font-weight: 400;
+        }
+
+        .nav-links {
+            display: flex;
+            list-style: none;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--dark);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        .btn-nav {
+            background: var(--primary);
+            color: white !important;
+            padding: 0.6rem 1.5rem;
+            border-radius: 50px;
+            transition: all 0.3s;
+        }
+
+        .btn-nav:hover {
+            background: var(--primary-dark);
+        }
+
+        /* Hero */
+        .page-hero {
+            margin-top: 80px;
+            padding: 5rem 0;
+            background: linear-gradient(135deg, var(--secondary) 0%, #1a252f 100%);
+            color: white;
+            text-align: center;
+        }
+
+        .page-hero h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .page-hero p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .breadcrumb {
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        .breadcrumb a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        /* Content */
+        .content-section {
+            padding: 5rem 0;
+            background: white;
+        }
+
+        .process-detail {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 4rem;
+            margin-bottom: 5rem;
+            align-items: center;
+        }
+
+        .process-detail.reverse {
+            direction: rtl;
+        }
+
+        .process-detail.reverse > * {
+            direction: ltr;
+        }
+
+        .process-visual {
+            width: 100%;
+            max-width: 520px;
+            aspect-ratio: 4/3;
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            margin: 0 auto;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+        }
+
+        .process-visual .zone-photo {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
+            display: block;
+        }
+
+        .process-content h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .process-number {
+            display: inline-block;
+            width: 60px;
+            height: 60px;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 60px;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .process-content p {
+            color: var(--gray);
+            margin-bottom: 1.5rem;
+            line-height: 1.8;
+            font-size: 1.1rem;
+        }
+
+        .process-features {
+            list-style: none;
+            margin-top: 1.5rem;
+        }
+
+        .process-features li {
+            padding: 0.8rem 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .process-features li:last-child {
+            border-bottom: none;
+        }
+
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(198, 93, 59, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .feature-text h4 {
+            margin-bottom: 0.3rem;
+            font-family: 'Inter', sans-serif;
+            font-size: 1.1rem;
+        }
+
+        .feature-text p {
+            color: var(--gray);
+            font-size: 0.95rem;
+            margin: 0;
+        }
+
+        /* Transparency Section */
+        .transparency-section {
+            background: var(--light);
+            padding: 5rem 0;
+        }
+
+        .transparency-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 3rem;
+            margin-top: 3rem;
+        }
+
+        .transparency-card {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+        }
+
+        .transparency-card h3 {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            color: var(--secondary);
+        }
+
+        .transparency-card.good h3 {
+            color: var(--success);
+        }
+
+        .transparency-card ul {
+            list-style: none;
+        }
+
+        .transparency-card ul li {
+            padding: 0.5rem 0;
+            padding-left: 2rem;
+            position: relative;
+        }
+
+        .transparency-card.good ul li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: var(--success);
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        .transparency-card.bad ul li::before {
+            content: '✗';
+            position: absolute;
+            left: 0;
+            color: #EF4444;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+
+        /* Stats */
+        .stats-section {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 4rem 0;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 3rem;
+            text-align: center;
+        }
+
+        .stat-item h3 {
+            font-size: 3.5rem;
+            margin-bottom: 0.5rem;
+            color: white;
+        }
+
+        .stat-item p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        /* CTA */
+        .cta-section {
+            padding: 5rem 0;
+            background: white;
+            text-align: center;
+        }
+
+        .cta-section h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .cta-section p {
+            color: var(--gray);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 15px rgba(198, 93, 59, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-3px);
+        }
+
+        .btn-whatsapp {
+            background: #25D366;
+            color: white;
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn-whatsapp:hover {
+            background: #1faa52;
+            transform: translateY(-3px);
+        }
+
+        .btn-whatsapp svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--dark);
+            color: white;
+            padding: 3rem 0 2rem;
+            text-align: center;
+        }
+
+        footer .logo {
+            color: white;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        footer p {
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0.5rem 0;
+        }
+
+        /* Floating WhatsApp Button */
+        .whatsapp-float {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 64px;
+            height: 64px;
+            background: #25D366;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-decoration: none;
+            box-shadow: 0 5px 20px rgba(37, 211, 102, 0.4);
+            z-index: 999;
+            transition: all 0.3s;
+            animation: pulse 2s infinite;
+        }
+
+        .whatsapp-float svg {
+            width: 36px;
+            height: 36px;
+            fill: white;
+        }
+
+        .whatsapp-float:hover {
+            transform: scale(1.1);
+            background: #1faa52;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 5px 20px rgba(37, 211, 102, 0.4); }
+            50% { box-shadow: 0 5px 30px rgba(37, 211, 102, 0.7); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .process-detail,
+            .transparency-grid {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 2.5rem;
+            }
+
+            .process-detail {
+                margin-bottom: 3.5rem;
+            }
+
+            .process-visual {
+                max-width: 420px;
+            }
+
+            .process-detail.reverse {
+                direction: ltr;
+            }
+
+            .page-hero h1 {
+                font-size: 2rem;
+            }
+
+            .nav-links {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body data-page="process">
+    <!-- Navigation -->
+    <nav>
+        <div class="container">
+            <a href="index.html" class="logo"><span data-contenu="nav.brandName">Tableaux</span><span data-contenu="nav.brandExtension"> Muraux</span></a>
+            <ul class="nav-links">
+                <li><a href="process.html" data-contenu="nav.linkProcess">Notre Processus</a></li>
+                <li><a href="materials.html" data-contenu="nav.linkMaterials">Matériaux</a></li>
+                <li><a href="index.html#gallery" data-contenu="nav.linkGallery">Galerie</a></li>
+                <li><a href="tour-de-controle.html" style="color: var(--primary); font-weight: 600;">🗼 Tour de Contrôle</a></li>
+                <li><a href="index.html#contact" class="btn-nav" data-contenu="nav.btnOrder">Commander</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="page-hero">
+        <div class="container">
+            <h1 data-contenu="hero.title">Notre Processus Créatif</h1>
+            <p data-contenu="hero.subtitle">De l'idée à l'œuvre d'art : comment nous créons des tableaux uniques alliant technologie de pointe et savoir-faire artisanal marocain</p>
+            <div class="breadcrumb">
+                <a href="index.html" data-contenu="hero.breadcrumbHome">Accueil</a> → <span data-contenu="hero.breadcrumbCurrent">Notre Processus</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Content -->
+    <section class="content-section">
+        <div class="container">
+            <!-- Étape 1 -->
+            <div class="process-detail">
+                <div class="process-visual">
+                    <img class="zone-photo"
+                         src="images/Gemini_Generated_Image_8r86048r86048r86.jpg"
+                         alt="Conception artistique numérique assistée par intelligence artificielle"
+                         data-contenu-img="step1.visual"
+                         loading="lazy">
+                </div>
+                <div class="process-content">
+                    <div class="process-number" data-contenu="step1.number">1</div>
+                    <h2 data-contenu="step1.title">Conception Numérique par IA</h2>
+                    <p data-contenu="step1.desc">Chaque œuvre commence par une collaboration unique entre l'intelligence créative humaine et les technologies de pointe en génération artistique. Nos artistes guident des modèles d'IA avancés pour créer des compositions originales.</p>
+                    
+                    <ul class="process-features">
+                        <li>
+                            <div class="feature-icon" data-contenu="step1.features.0.icon">🎨</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step1.features.0.title">Direction artistique humaine</h4>
+                                <p data-contenu="step1.features.0.desc">Nos artistes définissent le concept, le style et la palette de couleurs</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step1.features.1.icon">🤖</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step1.features.1.title">Génération par IA avancée</h4>
+                                <p data-contenu="step1.features.1.desc">Utilisation de modèles de dernière génération (DALL-E, Midjourney, Stable Diffusion)</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step1.features.2.icon">✨</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step1.features.2.title">Itérations et raffinement</h4>
+                                <p data-contenu="step1.features.2.desc">Plusieurs versions sont créées et affinées jusqu'à obtenir l'œuvre parfaite</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step1.features.3.icon">🇲🇦</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step1.features.3.title">Inspirations marocaines</h4>
+                                <p data-contenu="step1.features.3.desc">Motifs, couleurs et thèmes inspirés de la richesse culturelle du Maroc</p>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Étape 2 -->
+            <div class="process-detail reverse">
+                <div class="process-visual">
+                    <img class="zone-photo"
+                         src="images/Imprimante_ local1.jpg"
+                         alt="Impression d'art grand format haute définition sur bâche et toile"
+                         data-contenu-img="step2.visual"
+                         loading="lazy">
+                </div>
+                <div class="process-content">
+                    <div class="process-number" data-contenu="step2.number">2</div>
+                    <h2 data-contenu="step2.title">Impression Premium</h2>
+                    <p data-contenu="step2.desc">Une fois l'œuvre validée, elle est imprimée sur des supports de qualité professionnelle. Nous utilisons exclusivement des matériaux haut de gamme pour garantir des couleurs éclatantes et une durabilité exceptionnelle.</p>
+                    
+                    <ul class="process-features">
+                        <li>
+                            <div class="feature-icon" data-contenu="step2.features.0.icon">✨</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step2.features.0.title">Bâche Oragite® brillante</h4>
+                                <p data-contenu="step2.features.0.desc">Qualité professionnelle avec couleurs vibrantes et résistance aux UV</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step2.features.1.icon">🎨</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step2.features.1.title">Toile canvas artistique</h4>
+                                <p data-contenu="step2.features.1.desc">Texture traditionnelle pour un rendu authentique de galerie d'art</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step2.features.2.icon">🖨️</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step2.features.2.title">Impression haute résolution</h4>
+                                <p data-contenu="step2.features.2.desc">Technologie d'impression de dernière génération pour une netteté parfaite</p>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Étape 3 -->
+            <div class="process-detail">
+                <div class="process-visual">
+                    <img class="zone-photo"
+                         src="images/Atelier_ menuiserie1.jpg"
+                         alt="Assemblage artisanal manuel des cadres en bois massif à Marrakech"
+                         data-contenu-img="step3.visual"
+                         loading="lazy">
+                </div>
+                <div class="process-content">
+                    <div class="process-number" data-contenu="step3.number">3</div>
+                    <h2 data-contenu="step3.title">Fabrication Artisanale</h2>
+                    <p data-contenu="step3.desc">La touche finale est apportée par nos artisans de Marrakech. Chaque cadre est réalisé à la main avec un savoir-faire traditionnel, garantissant une qualité exceptionnelle et une attention aux détails incomparable.</p>
+                    
+                    <ul class="process-features">
+                        <li>
+                            <div class="feature-icon" data-contenu="step3.features.0.icon">🪵</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step3.features.0.title">Bois massif sélectionné</h4>
+                                <p data-contenu="step3.features.0.desc">Choix minutieux des meilleures essences de bois pour chaque cadre</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step3.features.1.icon">🔨</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step3.features.1.title">Fabrication à la main</h4>
+                                <p data-contenu="step3.features.1.desc">Chaque cadre est assemblé et fini manuellement par nos artisans</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step3.features.2.icon">📐</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step3.features.2.title">Multiples formes disponibles</h4>
+                                <p data-contenu="step3.features.2.desc">Rectangulaire, carré, panoramique ou sur mesure selon vos besoins</p>
+                            </div>
+                        </li>
+                        <li>
+                            <div class="feature-icon" data-contenu="step3.features.3.icon">✅</div>
+                            <div class="feature-text">
+                                <h4 data-contenu="step3.features.3.title">Contrôle qualité rigoureux</h4>
+                                <p data-contenu="step3.features.3.desc">Chaque tableau est inspecté avant expédition pour garantir la perfection</p>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Transparency Section -->
+    <section class="transparency-section">
+        <div class="container">
+            <div class="section-header" style="text-align: center; margin-bottom: 3rem;">
+                <h2 style="font-size: 2.5rem;" data-contenu="transparency.title">Notre Engagement de Transparence</h2>
+                <p style="color: var(--gray); font-size: 1.1rem; margin-top: 1rem;" data-contenu="transparency.subtitle">Nous croyons en l'honnêteté envers nos clients. Voici ce qui nous distingue.</p>
+            </div>
+
+            <div class="transparency-grid">
+                <div class="transparency-card good">
+                    <h3 data-contenu="transparency.goodTitle">✅ Notre approche transparente</h3>
+                    <ul>
+                        <li data-contenu="transparency.goodItems.0">Nous informons clairement que nos œuvres sont co-créées avec l'IA</li>
+                        <li data-contenu="transparency.goodItems.1">Nous expliquons en détail notre processus créatif</li>
+                        <li data-contenu="transparency.goodItems.2">Nous valorisons le travail artisanal humain (cadres, finitions)</li>
+                        <li data-contenu="transparency.goodItems.3">Nous utilisons des matériaux premium de marques reconnues</li>
+                        <li data-contenu="transparency.goodItems.4">Nous offrons un service client réactif et personnalisé</li>
+                        <li data-contenu="transparency.goodItems.5">Nous garantissons la qualité et la satisfaction client</li>
+                    </ul>
+                </div>
+
+                <div class="transparency-card bad">
+                    <h3 data-contenu="transparency.badTitle">❌ Ce que nous ne faisons PAS</h3>
+                    <ul>
+                        <li data-contenu="transparency.badItems.0">Nous ne prétendons pas que nos œuvres sont 100% faites à la main</li>
+                        <li data-contenu="transparency.badItems.1">Nous ne cachons pas l'utilisation de l'IA dans le processus créatif</li>
+                        <li data-contenu="transparency.badItems.2">Nous ne vendons pas de simples impressions digitales sans valeur ajoutée</li>
+                        <li data-contenu="transparency.badItems.3">Nous n'utilisons pas de matériaux de qualité inférieure</li>
+                        <li data-contenu="transparency.badItems.4">Nous ne faisons pas de promesses que nous ne pouvons pas tenir</li>
+                        <li data-contenu="transparency.badItems.5">Nous ne négligeons pas le service après-vente</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats-section">
+        <div class="container">
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <h3 data-contenu="stats.stat1.value">100%</h3>
+                    <p data-contenu="stats.stat1.label">Artisanat marocain pour les cadres</p>
+                </div>
+                <div class="stat-item">
+                    <h3 data-contenu="stats.stat2.value">50+</h3>
+                    <p data-contenu="stats.stat2.label">Créations uniques réalisées</p>
+                </div>
+                <div class="stat-item">
+                    <h3 data-contenu="stats.stat3.value">⭐ 5/5</h3>
+                    <p data-contenu="stats.stat3.label">Satisfaction client</p>
+                </div>
+                <div class="stat-item">
+                    <h3 data-contenu="stats.stat4.value">48h</h3>
+                    <p data-contenu="stats.stat4.label">Délai de production moyen</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+        <div class="container">
+            <h2 data-contenu="cta.title">Prêt à créer votre tableau unique ?</h2>
+            <p data-contenu="cta.subtitle">Contactez-nous sur WhatsApp pour discuter de votre projet et obtenir un devis personnalisé</p>
+            <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                <a href="https://wa.me/212648620364?text=Bonjour%20Tableaux%20Muraux%20!%20Je%20souhaite%20discuter%20d'un%20projet%20de%20tableau%20personnalisé." data-contenu-wa="cta.whatsappMessage" class="btn btn-whatsapp" aria-label="Discuter sur WhatsApp">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+                    </svg>
+                    <span data-contenu="cta.btnWhatsapp">Discuter sur WhatsApp</span>
+                </a>
+                <a href="index.html#gallery" class="btn btn-primary" data-contenu="cta.btnGallery">
+                    Voir la galerie →
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <a href="index.html" class="logo"><span data-contenu="footer.brandName">Tableaux</span><span style="color: var(--accent);" data-contenu="footer.brandExtension"> Muraux</span></a>
+            <p data-contenu="footer.desc">Art mural artisanal, co-créé par IA et fabriqué à la main à Marrakech</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <p data-contenu="footer.copyright">&copy; 2026 Tableaux Muraux. Tous droits réservés.</p>
+                <a href="social.html" style="opacity: 0.45; font-size: 0.8em; color: rgba(255,255,255,0.7); text-decoration: none;" title="Administration Social Media" data-contenu="footer.socialStudioLink">Social Studio</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Floating WhatsApp Button with Official Logo -->
+    <a href="https://wa.me/212648620364?text=Bonjour%20Tableaux%20Muraux%20!" data-contenu-wa="cta.whatsappMessage" class="whatsapp-float" aria-label="Contactez-nous sur WhatsApp">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 175.216 175.552" aria-hidden="true">
+            <defs>
+                <linearGradient id="wa-grad" x1="85.915" x2="86.535" y1="32.567" y2="137.092" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#57d163"/>
+                    <stop offset="1" stop-color="#23b33a"/>
+                </linearGradient>
+                <filter id="wa-shadow" width="1.115" height="1.114" x="-.057" y="-.057" color-interpolation-filters="sRGB">
+                    <feGaussianBlur stdDeviation="3.531"/>
+                </filter>
+            </defs>
+            <path fill="#b3b3b3" d="m54.532 138.45 2.235 1.324c9.387 5.571 20.15 8.518 31.126 8.523h.023c33.707 0 61.139-27.426 61.153-61.135.006-16.335-6.349-31.696-17.895-43.251A60.75 60.75 0 0 0 87.94 25.983c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.312-6.179 22.558zm-40.811 23.544L24.16 123.88c-6.438-11.154-9.825-23.808-9.821-36.772.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z" filter="url(#wa-shadow)"/>
+            <path fill="#fff" d="m12.966 161.238 10.439-38.114a73.42 73.42 0 0 1-9.821-36.772c.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z"/>
+            <path fill="url(#wa-grad)" d="M87.184 25.227c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.313-6.179 22.558 23.146-6.069 2.235 1.324c9.387 5.571 20.15 8.517 31.126 8.523h.023c33.707 0 61.14-27.426 61.153-61.135a60.75 60.75 0 0 0-17.895-43.251 60.75 60.75 0 0 0-43.235-17.928z"/>
+            <path fill="#fff" fill-rule="evenodd" d="M68.772 55.603c-1.378-3.061-2.828-3.123-4.137-3.176l-3.524-.043c-1.226 0-3.218.46-4.902 2.3s-6.435 6.287-6.435 15.332 6.588 17.785 7.506 19.013 12.718 20.381 31.405 27.75c15.529 6.124 18.689 4.906 22.061 4.6s10.877-4.447 12.408-8.74 1.532-7.971 1.073-8.74-1.685-1.226-3.525-2.146-10.877-5.367-12.562-5.981-2.91-.919-4.137.921-4.746 5.979-5.819 7.206-2.144 1.381-3.984.462-7.76-2.861-14.784-9.124c-5.465-4.873-9.154-10.891-10.228-12.73s-.114-2.835.808-3.751c.825-.824 1.838-2.147 2.759-3.22s1.224-1.84 1.836-3.065.307-2.301-.153-3.22-4.032-10.011-5.666-13.647"/>
+        </svg>
+    </a>
+
+    <!-- Scripts de pilotage du contenu -->
+    <script src="contenu.js"></script>
+    <script src="injection-contenu.js"></script>
+</body>
+</html>

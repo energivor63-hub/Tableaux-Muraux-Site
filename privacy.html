@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Politique de Confidentialité - Tableaux Muraux</title>
+    <meta name="description" content="Politique de confidentialité de Tableaux Muraux - Art mural artisanal co-créé par IA et fabriqué à Marrakech">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #C65D3B;
+            --primary-dark: #A84A2D;
+            --primary-light: #E8A888;
+            --secondary: #2C3E50;
+            --accent: #D4A574;
+            --bg-light: #FAF7F2;
+            --bg-cream: #F5EFE6;
+            --text-dark: #2C3E50;
+            --text-medium: #555;
+            --text-light: #888;
+            --border: #E5DDD0;
+            --whatsapp: #25D366;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.8;
+            color: var(--text-dark);
+            background: var(--bg-light);
+            padding-bottom: 80px;
+        }
+
+        /* Navigation */
+        .nav-bar {
+            background: white;
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .nav-brand {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: var(--text-medium);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--primary);
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 4rem 2rem 3rem;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+
+        .header .update-date {
+            opacity: 0.9;
+            font-size: 0.95rem;
+        }
+
+        /* Container */
+        .container {
+            max-width: 900px;
+            margin: -2rem auto 3rem;
+            padding: 0 2rem;
+        }
+
+        .content-box {
+            background: white;
+            border-radius: 12px;
+            padding: 3rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+        }
+
+        /* Sections */
+        h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary-dark);
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--accent);
+        }
+
+        h2:first-child {
+            margin-top: 0;
+        }
+
+        h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--secondary);
+            margin: 1.5rem 0 0.75rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text-medium);
+        }
+
+        ul {
+            margin: 1rem 0 1.5rem 1.5rem;
+            color: var(--text-medium);
+        }
+
+        ul li {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Highlight box */
+        .highlight-box {
+            background: var(--bg-cream);
+            border-left: 4px solid var(--primary);
+            padding: 1.5rem;
+            border-radius: 6px;
+            margin: 1.5rem 0;
+        }
+
+        .highlight-box strong {
+            color: var(--primary-dark);
+        }
+
+        /* AI Transparency box */
+        .ai-box {
+            background: linear-gradient(135deg, #FFF8F0 0%, #FAF7F2 100%);
+            border: 1px solid var(--accent);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1.5rem 0;
+        }
+
+        .ai-box h3 {
+            color: var(--primary-dark);
+            margin-top: 0;
+        }
+
+        /* Contact box */
+        .contact-box {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+            text-align: center;
+        }
+
+        .contact-box h2 {
+            color: white;
+            border-bottom: 2px solid rgba(255,255,255,0.3);
+            margin-top: 0;
+        }
+
+        .contact-box p {
+            color: rgba(255,255,255,0.95);
+        }
+
+        .contact-methods {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .contact-method {
+            background: rgba(255,255,255,0.15);
+            padding: 1rem;
+            border-radius: 8px;
+            text-decoration: none;
+            color: white;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .contact-method:hover {
+            background: rgba(255,255,255,0.25);
+            transform: translateY(-2px);
+        }
+
+        .contact-method svg {
+            width: 20px;
+            height: 20px;
+            fill: white;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-light);
+            font-size: 0.9rem;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 15px rgba(198, 93, 59, 0.3);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(198, 93, 59, 0.4);
+        }
+
+        /* Floating WhatsApp Button */
+        .whatsapp-float {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 64px;
+            height: 64px;
+            background: #25D366;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-decoration: none;
+            box-shadow: 0 5px 20px rgba(37, 211, 102, 0.4);
+            z-index: 999;
+            transition: all 0.3s;
+            animation: pulse 2s infinite;
+        }
+
+        .whatsapp-float svg {
+            width: 36px;
+            height: 36px;
+            fill: white;
+        }
+
+        .whatsapp-float:hover {
+            transform: scale(1.1);
+            background: #1faa52;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 5px 20px rgba(37, 211, 102, 0.4); }
+            50% { box-shadow: 0 5px 30px rgba(37, 211, 102, 0.7); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2rem; }
+            .content-box { padding: 2rem 1.5rem; }
+            .nav-bar { padding: 1rem; }
+            .nav-links { font-size: 0.9rem; }
+            .contact-methods { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body data-page="privacy">
+
+    <!-- Navigation -->
+    <nav class="nav-bar">
+        <a href="index.html" class="nav-brand" data-contenu="nav.brandName">Tableaux Muraux</a>
+        <div class="nav-links">
+            <a href="index.html" data-contenu="nav.linkHome">Accueil</a>
+            <a href="process.html" data-contenu="nav.linkProcess">Notre Processus</a>
+            <a href="materials.html" data-contenu="nav.linkMaterials">Matériaux</a>
+            <a href="index.html#gallery" data-contenu="nav.linkGallery">Galerie</a>
+            <a href="privacy.html" data-contenu="nav.linkPrivacy">Confidentialité</a>
+        </div>
+    </nav>
+
+    <!-- Header -->
+    <header class="header">
+        <h1 data-contenu="header.title">Politique de Confidentialité</h1>
+        <p class="update-date" data-contenu="header.lastUpdate">Dernière mise à jour : 19 août 2026</p>
+    </header>
+
+    <!-- Contenu -->
+    <div class="container">
+        <div class="content-box">
+
+            <div class="highlight-box">
+                <p data-contenu-html="intro.text"><strong>Introduction</strong><br>
+                Chez <strong>Tableaux Muraux</strong>, nous respectons votre vie privée et nous engageons à protéger vos données personnelles. Cette politique explique comment nous collectons, utilisons et protégeons vos informations lorsque vous visitez notre site, passez commande ou interagissez avec nous via WhatsApp et nos réseaux sociaux.</p>
+            </div>
+
+            <h2 data-contenu="section1.title">1. Collecte des données</h2>
+            <p data-contenu="section1.desc">Tableaux Muraux collecte les données personnelles que vous nous fournissez directement, notamment via WhatsApp, nos formulaires ou nos réseaux sociaux :</p>
+            <ul>
+                <li data-contenu="section1.items.0">Nom et prénom</li>
+                <li data-contenu="section1.items.1">Numéro de téléphone (WhatsApp)</li>
+                <li data-contenu="section1.items.2">Adresse email (si fournie)</li>
+                <li data-contenu="section1.items.3">Adresse de livraison (pour les commandes)</li>
+                <li data-contenu="section1.items.4">Préférences et demandes spécifiques concernant vos tableaux</li>
+                <li data-contenu="section1.items.5">Historique de nos échanges pour assurer un suivi personnalisé</li>
+            </ul>
+
+            <div class="highlight-box">
+                <strong data-contenu="section1.paymentTitle">💳 Informations de paiement :</strong><br>
+                <span data-contenu-html="section1.paymentDesc">Nous ne stockons <strong>jamais</strong> vos informations bancaires. Les paiements sont traités de manière sécurisée par nos processeurs de paiement certifiés (virement bancaire, paiement à la livraison, ou plateformes sécurisées).</span>
+            </div>
+
+            <h2 data-contenu="section2.title">2. Utilisation des données</h2>
+            <p data-contenu="section2.desc">Vos données sont utilisées pour :</p>
+            <ul>
+                <li data-contenu="section2.items.0">Traiter et expédier vos commandes de tableaux muraux</li>
+                <li data-contenu="section2.items.1">Communiquer avec vous concernant vos commandes (suivi, livraison)</li>
+                <li data-contenu="section2.items.2">Personnaliser vos créations selon vos préférences (dimensions, couleurs, style)</li>
+                <li data-contenu="section2.items.3">Améliorer nos services et votre expérience client</li>
+                <li data-contenu="section2.items.4">Vous envoyer des informations sur nos nouvelles collections (avec votre consentement)</li>
+                <li data-contenu="section2.items.5">Répondre à vos questions via WhatsApp, email ou réseaux sociaux</li>
+            </ul>
+
+            <h2 data-contenu="section3.title">3. Partage des données</h2>
+            <p data-contenu-html="section3.desc"><strong>Nous ne vendons jamais vos données personnelles.</strong> Nous pouvons les partager uniquement avec :</p>
+            <ul>
+                <li data-contenu-html="section3.items.0"><strong>Nos prestataires de livraison</strong> (pour acheminer vos tableaux)</li>
+                <li data-contenu-html="section3.items.1"><strong>Nos processeurs de paiement</strong> (uniquement pour finaliser les transactions)</li>
+                <li data-contenu-html="section3.items.2"><strong>Les autorités compétentes</strong> si la loi l'exige</li>
+            </ul>
+
+            <h2 data-contenu="section4.title">4. Transparence sur l'utilisation de l'IA</h2>
+            <div class="ai-box">
+                <h3 data-contenu="section4.aiTitle">🤖 Co-création artistique</h3>
+                <p data-contenu-html="section4.aiIntro">Chez Tableaux Muraux, nos œuvres sont le fruit d'une <strong>co-création entre intelligence artificielle et artisanat humain</strong> :</p>
+                <ul>
+                    <li data-contenu-html="section4.aiItems.0"><strong>Conception numérique :</strong> Nos artistes guident des modèles d'IA pour créer des compositions originales</li>
+                    <li data-contenu-html="section4.aiItems.1"><strong>Impression premium :</strong> Sur bâche Oragite® brillante ou toile canvas</li>
+                    <li data-contenu-html="section4.aiItems.2"><strong>Fabrication artisanale :</strong> Cadres en bois réalisés à la main par nos artisans de Marrakech</li>
+                </ul>
+                <p style="margin-top: 1rem;" data-contenu-html="section4.aiNote">Les données que vous nous fournissez pour personnaliser vos œuvres (thèmes, couleurs, dimensions) sont utilisées <strong>uniquement</strong> pour guider ce processus créatif et ne sont jamais partagées avec des tiers à des fins d'entraînement d'IA.</p>
+            </div>
+
+            <h2 data-contenu="section5.title">5. Vos droits (RGPD)</h2>
+            <p data-contenu="section5.desc">Conformément au Règlement Général sur la Protection des Données (RGPD), vous disposez des droits suivants :</p>
+            <ul>
+                <li data-contenu-html="section5.items.0"><strong>Droit d'accès</strong> à vos données personnelles</li>
+                <li data-contenu-html="section5.items.1"><strong>Droit de rectification</strong> des données inexactes</li>
+                <li data-contenu-html="section5.items.2"><strong>Droit à l'effacement</strong> ("droit à l'oubli")</li>
+                <li data-contenu-html="section5.items.3"><strong>Droit à la portabilité</strong> de vos données</li>
+                <li data-contenu-html="section5.items.4"><strong>Droit d'opposition</strong> au traitement de vos données</li>
+                <li data-contenu-html="section5.items.5"><strong>Droit de retirer votre consentement</strong> à tout moment</li>
+            </ul>
+
+            <p data-contenu="section5.contactNote">Pour exercer ces droits, contactez-nous simplement via WhatsApp. Nous répondrons dans un délai de 30 jours maximum.</p>
+
+            <h2 data-contenu="section6.title">6. Conservation des données</h2>
+            <p data-contenu="section6.desc">Nous conservons vos données personnelles :</p>
+            <ul>
+                <li data-contenu-html="section6.items.0"><strong>Données de commande :</strong> 3 ans (obligation comptable)</li>
+                <li data-contenu-html="section6.items.1"><strong>Échanges WhatsApp :</strong> Aussi longtemps que nécessaire pour le suivi client</li>
+                <li data-contenu-html="section6.items.2"><strong>Inscriptions marketing :</strong> Jusqu'à votre désinscription</li>
+            </ul>
+
+            <h2 data-contenu="section7.title">7. Cookies et traceurs</h2>
+            <p data-contenu="section7.desc">Notre site utilise uniquement des cookies essentiels au fonctionnement (préférences de langue, filtres). Nous n'utilisons pas de cookies publicitaires ni de traceurs tiers sans votre consentement explicite.</p>
+
+            <h2 data-contenu="section8.title">8. Sécurité des données</h2>
+            <p data-contenu="section8.desc">Nous mettons en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données :</p>
+            <ul>
+                <li data-contenu="section8.items.0">Communication HTTPS sécurisée</li>
+                <li data-contenu="section8.items.1">Accès restreint aux données sensibles</li>
+                <li data-contenu="section8.items.2">Formation de notre équipe sur la protection des données</li>
+            </ul>
+
+            <h2 data-contenu="section9.title">9. Modifications de cette politique</h2>
+            <p data-contenu="section9.desc">Nous nous réservons le droit de mettre à jour cette politique. Toute modification sera publiée sur cette page avec une nouvelle date de mise à jour. Nous vous encourageons à la consulter régulièrement.</p>
+
+            <!-- Contact Box -->
+            <div class="contact-box">
+                <h2 data-contenu="contact.title">📞 Nous contacter</h2>
+                <p data-contenu="contact.desc">Pour toute question concernant cette politique de confidentialité ou vos données personnelles :</p>
+                <div class="contact-methods">
+                    <a href="https://wa.me/212648620364?text=Bonjour%20Tableaux%20Muraux%20!%20J'ai%20une%20question%20concernant%20la%20politique%20de%20confidentialit%C3%A9." data-contenu-wa="contact.whatsappMessage" class="contact-method" target="_blank">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                        </svg>
+                        <span>WhatsApp</span>
+                    </a>
+                    <a href="https://www.instagram.com/tableaux.marrakech" class="contact-method" target="_blank">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                        </svg>
+                        <span>Instagram</span>
+                    </a>
+                    <a href="https://www.facebook.com/tableauxmuraux.maroc" class="contact-method" target="_blank">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                        </svg>
+                        <span>Facebook</span>
+                    </a>
+                    <a href="https://www.pinterest.com/tableauxmuraux_art" class="contact-method" target="_blank">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 0a12 12 0 0 0-4.373 23.178c-.07-.633-.134-1.606.028-2.298.146-.623.942-3.992.942-3.992s-.24-.482-.24-1.193c0-1.117.647-1.95 1.452-1.95.684 0 1.014.514 1.014 1.13 0 .688-.438 1.72-.665 2.676-.19.8.402 1.452 1.19 1.452 1.428 0 2.52-1.506 2.52-3.682 0-1.926-1.384-3.272-3.36-3.272-2.288 0-3.632 1.716-3.632 3.49 0 .692.267 1.434.6 1.942.067.102.077.152.053.236-.06.248-.196.8-.223.912-.036.148-.116.18-.268.108-1.002-.466-1.63-1.93-1.63-3.108 0-2.53 1.84-4.852 5.304-4.852 2.784 0 4.95 1.982 4.95 4.632 0 2.764-1.742 4.988-4.16 4.988-.812 0-1.576-.422-1.836-.92l-.5 1.904c-.18.698-.668 1.574-1 2.108.75.232 1.544.358 2.368.358 6.627 0 12-5.373 12-12 0-6.628-5.373-12-12-12z"/>
+                        </svg>
+                        <span>Pinterest</span>
+                    </a>
+                </div>
+                <p style="margin-top: 1.5rem; font-size: 0.9rem; opacity: 0.9;" data-contenu="contact.address">
+                    📍 Adresse : Marrakech, Maroc
+                </p>
+            </div>
+
+            <!-- Bouton Galerie CTA -->
+            <div style="text-align: center; margin-top: 2.5rem;">
+                <a href="index.html#gallery" class="btn btn-primary" data-contenu="cta.btnGallery">
+                    Voir la galerie →
+                </a>
+            </div>
+
+        </div>
+
+        <footer class="footer">
+            <p data-contenu="footer.copyright">© 2026 Tableaux Muraux - Art mural artisanal co-créé par IA</p>
+            <p style="margin-top: 0.5rem;" data-contenu="footer.tagline">Conçu et fabriqué avec ❤️ à Marrakech</p>
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                <a href="social.html" style="opacity: 0.45; font-size: 0.8em; color: rgba(255,255,255,0.7); text-decoration: none;" title="Administration Social Media" data-contenu="footer.socialStudioLink">Social Studio</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Floating WhatsApp Button with Official Logo -->
+    <a href="https://wa.me/212648620364?text=Bonjour%20Tableaux%20Muraux%20!" data-contenu-wa="cta.whatsappMessage" class="whatsapp-float" aria-label="Contactez-nous sur WhatsApp">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 175.216 175.552" aria-hidden="true">
+            <defs>
+                <linearGradient id="wa-grad" x1="85.915" x2="86.535" y1="32.567" y2="137.092" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="#57d163"/>
+                    <stop offset="1" stop-color="#23b33a"/>
+                </linearGradient>
+                <filter id="wa-shadow" width="1.115" height="1.114" x="-.057" y="-.057" color-interpolation-filters="sRGB">
+                    <feGaussianBlur stdDeviation="3.531"/>
+                </filter>
+            </defs>
+            <path fill="#b3b3b3" d="m54.532 138.45 2.235 1.324c9.387 5.571 20.15 8.518 31.126 8.523h.023c33.707 0 61.139-27.426 61.153-61.135.006-16.335-6.349-31.696-17.895-43.251A60.75 60.75 0 0 0 87.94 25.983c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.312-6.179 22.558zm-40.811 23.544L24.16 123.88c-6.438-11.154-9.825-23.808-9.821-36.772.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z" filter="url(#wa-shadow)"/>
+            <path fill="#fff" d="m12.966 161.238 10.439-38.114a73.42 73.42 0 0 1-9.821-36.772c.017-40.556 33.021-73.55 73.578-73.55 19.681.01 38.154 7.669 52.047 21.572s21.537 32.383 21.53 52.037c-.018 40.553-33.027 73.553-73.578 73.553h-.032c-12.313-.005-24.412-3.094-35.159-8.954z"/>
+            <path fill="url(#wa-grad)" d="M87.184 25.227c-33.733 0-61.166 27.423-61.178 61.13a60.98 60.98 0 0 0 9.349 32.535l1.455 2.313-6.179 22.558 23.146-6.069 2.235 1.324c9.387 5.571 20.15 8.517 31.126 8.523h.023c33.707 0 61.14-27.426 61.153-61.135a60.75 60.75 0 0 0-17.895-43.251 60.75 60.75 0 0 0-43.235-17.928z"/>
+            <path fill="#fff" fill-rule="evenodd" d="M68.772 55.603c-1.378-3.061-2.828-3.123-4.137-3.176l-3.524-.043c-1.226 0-3.218.46-4.902 2.3s-6.435 6.287-6.435 15.332 6.588 17.785 7.506 19.013 12.718 20.381 31.405 27.75c15.529 6.124 18.689 4.906 22.061 4.6s10.877-4.447 12.408-8.74 1.532-7.971 1.073-8.74-1.685-1.226-3.525-2.146-10.877-5.367-12.562-5.981-2.91-.919-4.137.921-4.746 5.979-5.819 7.206-2.144 1.381-3.984.462-7.76-2.861-14.784-9.124c-5.465-4.873-9.154-10.891-10.228-12.73s-.114-2.835.808-3.751c.825-.824 1.838-2.147 2.759-3.22s1.224-1.84 1.836-3.065.307-2.301-.153-3.22-4.032-10.011-5.666-13.647"/>
+        </svg>
+    </a>
+
+    <!-- Scripts de pilotage du contenu -->
+    <script src="contenu.js"></script>
+    <script src="injection-contenu.js"></script>
+</body>
+</html>
