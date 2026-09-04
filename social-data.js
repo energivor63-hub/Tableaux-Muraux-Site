@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════
 //  📱 SOCIAL DATA — Tableaux Muraux (gestion réseaux sociaux)
 // ═══════════════════════════════════════════════════════════════
 //  ⚙️  Module statique : aucune API réelle, aucune publication
@@ -15,7 +15,7 @@ const socialData = {
     {
       id: "instagram",
       plateforme: "Instagram",
-      handle: "@tableaux.marrakech",
+      handle: "@ideawoven.marrakech",
       nom: "Tableaux Muraux | Art Mural",
       icone: "📸",
       statut: "connecte",
@@ -113,3 +113,4 @@ const socialData = {
     { id: "media-4", src: "images/detail_texture.jpg",            titre: "Texture et Finition",      tag: "Matériaux" }
   ]
 };
+

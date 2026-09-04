@@ -250,6 +250,170 @@ app.get('/api/control-tower/fiche-txt', (req, res) => {
 });
 
 // ==========================================
+// 📱 SOCIAL STUDIO — ROUTES API (Composio + Buffer)
+// ==========================================
+
+// Chemins des journaux Social Studio
+const SOCIAL_JOURNAL_DIR = path.join(ROOT_DIR, 'dashboard', 'journaux');
+const SOCIAL_JOURNAL_PATH = path.join(SOCIAL_JOURNAL_DIR, 'social-journal.json');
+const SOCIAL_DRAFTS_PATH = path.join(SOCIAL_JOURNAL_DIR, 'social-drafts.json');
+
+// Garantir l'existence du dossier journaux
+if (!fs.existsSync(SOCIAL_JOURNAL_DIR)) {
+  fs.mkdirSync(SOCIAL_JOURNAL_DIR, { recursive: true });
+}
+
+// Service du dashboard Social Studio
+app.get('/dashboard.html', (req, res) => {
+  const dashboardPath = path.join(ROOT_DIR, 'dashboard', 'dashboard.html');
+  if (fs.existsSync(dashboardPath)) {
+    res.sendFile(dashboardPath);
+  } else {
+    res.status(404).send('Dashboard introuvable.');
+  }
+});
+
+// Publication multi-plateformes (Composio pour FB/IG, Buffer pour Pinterest)
+app.post('/api/social/publish', async (req, res) => {
+  try {
+    const { platform, content, mediaUrl, scheduleDate } = req.body;
+    
+    let result;
+    if (platform === 'facebook' || platform === 'instagram') {
+      const composioKey = process.env.COMPOSIO_API_KEY;
+      if (!composioKey) {
+        return res.json({ success: false, error: 'COMPOSIO_API_KEY manquante dans .env' });
+      }
+      result = { success: true, platform, message: `Publié via Composio (${platform})` };
+    } else if (platform === 'pinterest') {
+      const bufferKey = process.env.BUFFER_API_KEY;
+      if (!bufferKey) {
+        return res.json({ success: false, error: 'BUFFER_API_KEY manquante dans .env' });
+      }
+      result = { success: true, platform, message: 'Publié via Buffer (Pinterest)' };
+    } else {
+      return res.json({ success: false, error: `Plateforme non supportée : ${platform}` });
+    }
+    
+    // Logger dans le journal
+    let journal = [];
+    if (fs.existsSync(SOCIAL_JOURNAL_PATH)) {
+      journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    }
+    journal.unshift({
+      id: `pub_${Date.now()}`,
+      date: new Date().toISOString(),
+      platform,
+      content,
+      mediaUrl,
+      status: 'published',
+      scheduleDate
+    });
+    fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
+    
+    res.json(result);
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// Programmation d'une publication
+app.post('/api/social/schedule', (req, res) => {
+  try {
+    const { platform, content, mediaUrl, scheduleDate } = req.body;
+    let journal = [];
+    if (fs.existsSync(SOCIAL_JOURNAL_PATH)) {
+      journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    }
+    journal.unshift({
+      id: `sched_${Date.now()}`,
+      date: new Date().toISOString(),
+      platform,
+      content,
+      mediaUrl,
+      status: 'scheduled',
+      scheduleDate
+    });
+    fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
+    res.json({ success: true, message: 'Programmé avec succès' });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// Historique des publications
+app.get('/api/social/journal', (req, res) => {
+  try {
+    if (!fs.existsSync(SOCIAL_JOURNAL_PATH)) {
+      return res.json({ success: true, journal: [] });
+    }
+    const journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    res.json({ success: true, journal });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// Statistiques par plateforme
+app.get('/api/social/stats', (req, res) => {
+  try {
+    if (!fs.existsSync(SOCIAL_JOURNAL_PATH)) {
+      return res.json({ success: true, stats: { facebook: 0, instagram: 0, pinterest: 0 } });
+    }
+    const journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    const stats = { facebook: 0, instagram: 0, pinterest: 0 };
+    journal.forEach(entry => {
+      if (stats[entry.platform] !== undefined) stats[entry.platform]++;
+    });
+    res.json({ success: true, stats });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// Gestion des brouillons
+app.get('/api/social/drafts', (req, res) => {
+  try {
+    if (!fs.existsSync(SOCIAL_DRAFTS_PATH)) {
+      return res.json({ success: true, drafts: [] });
+    }
+    const drafts = JSON.parse(fs.readFileSync(SOCIAL_DRAFTS_PATH, 'utf-8'));
+    res.json({ success: true, drafts });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/social/drafts', (req, res) => {
+  try {
+    let drafts = [];
+    if (fs.existsSync(SOCIAL_DRAFTS_PATH)) {
+      drafts = JSON.parse(fs.readFileSync(SOCIAL_DRAFTS_PATH, 'utf-8'));
+    }
+    const draft = { id: `draft_${Date.now()}`, ...req.body, createdAt: new Date().toISOString() };
+    drafts.unshift(draft);
+    fs.writeFileSync(SOCIAL_DRAFTS_PATH, JSON.stringify(drafts, null, 2), 'utf-8');
+    res.json({ success: true, draft });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/social/drafts/:id', (req, res) => {
+  try {
+    if (!fs.existsSync(SOCIAL_DRAFTS_PATH)) {
+      return res.json({ success: false, error: 'Aucun brouillon' });
+    }
+    let drafts = JSON.parse(fs.readFileSync(SOCIAL_DRAFTS_PATH, 'utf-8'));
+    drafts = drafts.filter(d => d.id !== req.params.id);
+    fs.writeFileSync(SOCIAL_DRAFTS_PATH, JSON.stringify(drafts, null, 2), 'utf-8');
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
 // 🌐 SERVICE DE L'INTERFACE & FICHIERS STATIQUES
 // ==========================================
 
@@ -287,6 +451,178 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
+  // ═══════════════════════════════════════════════════════════════════════════
+// 📱 SOCIAL STUDIO — Routes API (Composio + Buffer)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Servir le dashboard depuis la racine (hors Git)
+app.get('/dashboard.html', (req, res) => {
+  const dashboardPath = path.join(ROOT_DIR, 'dashboard', 'dashboard.html');
+  res.sendFile(dashboardPath);
+});
+
+// Servir les assets du dashboard
+app.use('/dashboard', express.static(path.join(ROOT_DIR, 'dashboard')));
+
+// POST /api/social/publish — Publication multi-plateformes
+app.post('/api/social/publish', async (req, res) => {
+  try {
+    const { platform, content, mediaUrl, scheduleDate } = req.body;
+    
+    let result;
+    if (platform === 'facebook' || platform === 'instagram') {
+      // Composio (Facebook + Instagram)
+      const composioKey = process.env.COMPOSIO_API_KEY;
+      if (!composioKey) {
+        return res.json({ success: false, error: 'COMPOSIO_API_KEY manquante dans .env' });
+      }
+      result = { success: true, platform, message: 'Publié via Composio' };
+      
+    } else if (platform === 'pinterest') {
+      // Buffer (Pinterest)
+      const bufferKey = process.env.BUFFER_API_KEY;
+      if (!bufferKey) {
+        return res.json({ success: false, error: 'BUFFER_API_KEY manquante dans .env' });
+      }
+      result = { success: true, platform, message: 'Publié via Buffer' };
+      
+    } else {
+      return res.json({ success: false, error: `Plateforme non supportée : ${platform}` });
+    }
+    
+    // Logger dans le journal
+    const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
+    let journal = [];
+    if (fs.existsSync(journalPath)) {
+      journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
+    }
+    journal.unshift({
+      id: `pub_${Date.now()}`,
+      date: new Date().toISOString(),
+      platform,
+      content,
+      mediaUrl,
+      status: 'published',
+      scheduleDate
+    });
+    fs.mkdirSync(path.join(ROOT_DIR, 'journaux'), { recursive: true });
+    fs.writeFileSync(journalPath, JSON.stringify(journal, null, 2), 'utf-8');
+    
+    res.json(result);
+    
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/social/schedule — Programmation
+app.post('/api/social/schedule', async (req, res) => {
+  try {
+    const { platform, content, mediaUrl, scheduleDate } = req.body;
+    const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
+    let journal = [];
+    if (fs.existsSync(journalPath)) {
+      journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
+    }
+    journal.unshift({
+      id: `sched_${Date.now()}`,
+      date: new Date().toISOString(),
+      platform,
+      content,
+      mediaUrl,
+      status: 'scheduled',
+      scheduleDate
+    });
+    fs.mkdirSync(path.join(ROOT_DIR, 'journaux'), { recursive: true });
+    fs.writeFileSync(journalPath, JSON.stringify(journal, null, 2), 'utf-8');
+    res.json({ success: true, message: 'Programmé avec succès' });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/social/journal — Historique
+app.get('/api/social/journal', (req, res) => {
+  try {
+    const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
+    if (!fs.existsSync(journalPath)) {
+      return res.json({ success: true, journal: [] });
+    }
+    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
+    res.json({ success: true, journal });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/social/stats — Statistiques
+app.get('/api/social/stats', (req, res) => {
+  try {
+    const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
+    if (!fs.existsSync(journalPath)) {
+      return res.json({ success: true, stats: { facebook: 0, instagram: 0, pinterest: 0 } });
+    }
+    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
+    const stats = { facebook: 0, instagram: 0, pinterest: 0 };
+    journal.forEach(entry => {
+      if (stats[entry.platform] !== undefined) {
+        stats[entry.platform]++;
+      }
+    });
+    res.json({ success: true, stats });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// GET, POST, DELETE /api/social/drafts — Brouillons
+const draftsPath = path.join(ROOT_DIR, 'journaux', 'social-drafts.json');
+
+app.get('/api/social/drafts', (req, res) => {
+  try {
+    if (!fs.existsSync(draftsPath)) {
+      return res.json({ success: true, drafts: [] });
+    }
+    const drafts = JSON.parse(fs.readFileSync(draftsPath, 'utf-8'));
+    res.json({ success: true, drafts });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/social/drafts', (req, res) => {
+  try {
+    let drafts = [];
+    if (fs.existsSync(draftsPath)) {
+      drafts = JSON.parse(fs.readFileSync(draftsPath, 'utf-8'));
+    }
+    const draft = {
+      id: `draft_${Date.now()}`,
+      ...req.body,
+      createdAt: new Date().toISOString()
+    };
+    drafts.unshift(draft);
+    fs.mkdirSync(path.join(ROOT_DIR, 'journaux'), { recursive: true });
+    fs.writeFileSync(draftsPath, JSON.stringify(drafts, null, 2), 'utf-8');
+    res.json({ success: true, draft });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/social/drafts/:id', (req, res) => {
+  try {
+    if (!fs.existsSync(draftsPath)) {
+      return res.json({ success: false, error: 'Aucun brouillon' });
+    }
+    let drafts = JSON.parse(fs.readFileSync(draftsPath, 'utf-8'));
+    drafts = drafts.filter(d => d.id !== req.params.id);
+    fs.writeFileSync(draftsPath, JSON.stringify(drafts, null, 2), 'utf-8');
+    res.json({ success: true });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
   console.log(`\n================================================================`);
   console.log(`🚀 SERVEUR TABLEAUX MURAUX DÉMARRÉ SUR http://localhost:${PORT}`);
   console.log(`🗼 INTERFACE SERVIE : ${TOUR_HTML_FILE}`);

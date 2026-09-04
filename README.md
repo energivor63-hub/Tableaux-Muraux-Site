@@ -1,4 +1,4 @@
-# 🌐 SITE WEB - Documentation
+﻿# 🌐 SITE WEB - Documentation
 
 ## Présentation
 
@@ -347,7 +347,7 @@ Un module statique de gestion des réseaux sociaux (Facebook, Instagram, Pintere
 ### Données fictives
 
 Les comptes simulés utilisent la nouvelle identité visuelle :
-- Instagram : `@tableaux.marrakech`
+- Instagram : `@ideawoven.marrakech`
 - Facebook : `tableauxmuraux.maroc`
 - Pinterest : `@tableauxmuraux_art`
 
@@ -356,3 +356,4 @@ Aucune API réelle n'est connectée : il s'agit uniquement d'une maquette statiq
 ---
 
 **Dernière mise à jour** : 27 août 2026 (v2.3 — rebranding « Tableaux Muraux » + module Social Studio)
+

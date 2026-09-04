@@ -1,4 +1,4 @@
-// ============================================
+﻿// ============================================
 // CONFIGURATION DU SITE - Tableaux Muraux
 // ============================================
 // ⚠️ IMPORTANT : Ce fichier est une référence technique.
@@ -37,8 +37,8 @@ const SITE_CONFIG = {
             officialColor: "#25D366"
         },
         instagram: {
-            username: "tableaux.marrakech",
-            url: "https://instagram.com/tableaux.marrakech",
+            username: "ideawoven.marrakech",
+            url: "https://instagram.com/ideawoven.marrakech",
             label: "Instagram"
         },
         facebook: {
@@ -417,3 +417,5 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { SITE_CONFIG, getWhatsAppLink, getProductWhatsAppLink };
 }
+
+

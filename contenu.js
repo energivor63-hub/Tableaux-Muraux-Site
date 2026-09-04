@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════
 //  📝 FICHIER DE CONTENU - Tableaux Muraux
 // ═══════════════════════════════════════════════════════════════
 //  ✏️  MODIFIEZ CE FICHIER pour mettre à jour votre site web
@@ -447,7 +447,7 @@ const CONTENU_SITE = {
   // 📱 RÉSEAUX SOCIAUX
   // ─────────────────────────────────────────────────────────────
   reseaux: {
-    instagram: "https://instagram.com/tableaux.marrakech",
+    instagram: "https://instagram.com/ideawoven.marrakech",
     facebook: "https://facebook.com/profile.php?id=952942547902065",
     pinterest: "https://pinterest.com/tableauxmuraux_art",
     siteWeb: "https://energivor63-hub.github.io/Tableaux-Muraux-Site"
@@ -941,3 +941,4 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONTENU_SITE;
 }
+
