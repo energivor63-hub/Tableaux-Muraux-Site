@@ -1,4 +1,4 @@
-// ═══════════════════════════════════════════════════════════════
+﻿// ═══════════════════════════════════════════════════════════════
 //  📝 FICHIER DE CONTENU - Tableaux Muraux
 // ═══════════════════════════════════════════════════════════════
 //  ✏️  MODIFIEZ CE FICHIER pour mettre à jour votre site web
@@ -52,7 +52,7 @@ const CONTENU_SITE = {
     titreAvant: "L'art mural",
     titreItalique: "réinventé",
     titreApres: "à Marrakech",
-    sousTitre: "Des tableaux uniques, co-créés par l'intelligence artificielle et fabriqués à la main par nos artisans. Impression premium sur bâche premium et toile canvas, encadrement artisanal en bois.",
+    sousTitre: "Des tableaux uniques, co-créés par l'intelligence artificielle et fabriqués à la main par nos artisans. Impression premium sur bâche haute définition et toile canvas, encadrement artisanal en bois.",
     boutonPrincipal: "Découvrir la collection →",
     boutonSecondaire: "Notre processus"
   },
@@ -488,8 +488,8 @@ const CONTENU_SITE = {
         breadcrumbHome: "Accueil",
         breadcrumbCurrent: "Nos Matériaux"
       },
-      haute définition: {
-        visual: "images/bache-haute définition.jpg",
+      premium: {
+        visual: "images/bache-premium.jpg",
         title: "bâche premium Brillante",
         subtitle: "La référence en matière d'impression grand format. <strong>haute définition</strong> est une marque du groupe allemand <strong>ORAFOL</strong>, reconnue mondialement pour la qualité professionnelle de ses supports d'impression numérique.",
         features: [
@@ -546,20 +546,20 @@ const CONTENU_SITE = {
         title: "Comparaison détaillée",
         subtitle: "Choisissez le matériau idéal pour votre projet",
         thFeature: "Caractéristique",
-        thhaute définition: "haute définition Brillante",
+        thpremium: "haute définition Brillante",
         thCanvas: "Canvas Artistique",
-        row1: { name: "Finition", haute définition: "Brillante", canvas: "Mate texturée" },
-        row2: { name: "Intensité des couleurs", haute définitionRating: "★★★★★", canvasRating: "★★★★☆" },
-        row3: { name: "Résistance UV", haute définitionCheck: "✓", canvasCheck: "✓" },
-        row4: { name: "Facilité d'entretien", haute définitionRating: "★★★★★", canvasRating: "★★★☆☆" },
-        row5: { name: "Aspect traditionnel", haute définitionRating: "★★★☆☆", canvasRating: "★★★★★" },
-        row6: { name: "Style moderne", haute définitionRating: "★★★★★", canvasRating: "★★★☆☆" },
-        row7: { name: "Prix (taille standard)", haute définition: "À partir de 70 MAD", canvas: "À partir de 120 MAD" }
+        row1: { name: "Finition", premium: "Brillante", canvas: "Mate texturée" },
+        row2: { name: "Intensité des couleurs", premiumRating: "★★★★★", canvasRating: "★★★★☆" },
+        row3: { name: "Résistance UV", premiumCheck: "✓", canvasCheck: "✓" },
+        row4: { name: "Facilité d'entretien", premiumRating: "★★★★★", canvasRating: "★★★☆☆" },
+        row5: { name: "Aspect traditionnel", premiumRating: "★★★☆☆", canvasRating: "★★★★★" },
+        row6: { name: "Style moderne", premiumRating: "★★★★★", canvasRating: "★★★☆☆" },
+        row7: { name: "Prix (taille standard)", premium: "À partir de 70 MAD", canvas: "À partir de 120 MAD" }
       },
       useCases: {
         title: "Quel matériau pour quelle pièce ?",
         subtitle: "Nos recommandations selon l'ambiance souhaitée",
-        cardhaute définition: {
+        cardpremium: {
           visual: "images/hero-marrakech.jpg",
           icon: "✨",
           title: "haute définition Brillante",
@@ -774,7 +774,7 @@ const CONTENU_SITE = {
         boxIntro: "Chez Tableaux Muraux, nos œuvres sont le fruit d'une <strong>co-création entre intelligence artificielle et artisanat humain</strong> :",
         boxItems: [
           "<strong>Conception numérique :</strong> Nos artistes guident des modèles d'IA pour créer des compositions originales",
-          "<strong>Impression premium :</strong> Sur bâche premium brillante ou toile canvas",
+          "<strong>Impression premium :</strong> Sur bâche haute définition brillante ou toile canvas",
           "<strong>Fabrication artisanale :</strong> Cadres en bois réalisés à la main par nos artisans de Marrakech"
         ],
         boxNote: "Les données que vous nous fournissez pour personnaliser vos œuvres (thèmes, couleurs, dimensions) sont utilisées <strong>uniquement</strong> pour guider ce processus créatif et ne sont jamais partagées avec des tiers à des fins d'entraînement d'IA."
@@ -941,5 +941,4 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONTENU_SITE;
 }
-
 
