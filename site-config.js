@@ -1,4 +1,4 @@
-﻿// ============================================
+// ============================================
 // CONFIGURATION DU SITE - Tableaux Muraux
 // ============================================
 // ⚠️ IMPORTANT : Ce fichier est une référence technique.
@@ -92,7 +92,7 @@ const SITE_CONFIG = {
         titleBefore: "L'art mural",
         titleHighlight: "réinventé",
         titleAfter: "à Marrakech",
-        description: "Des tableaux uniques, co-créés par l'intelligence artificielle et fabriqués à la main par nos artisans. Impression premium sur bâche Oragite® et toile canvas, encadrement artisanal en bois.",
+        description: "Des tableaux uniques, co-créés par l'intelligence artificielle et fabriqués à la main par nos artisans. Impression premium sur bâche premium et toile canvas, encadrement artisanal en bois.",
         primaryButton: "Découvrir la collection →",
         secondaryButton: "Notre processus"
     },
@@ -118,7 +118,7 @@ const SITE_CONFIG = {
                 number: 2,
                 icon: "🖨️",
                 title: "Impression Premium",
-                description: "Chaque œuvre est imprimée sur bâche brillante Oragite® (qualité muséale) ou sur toile canvas artistique, pour des couleurs éclatantes et durables.",
+                description: "Chaque œuvre est imprimée sur bâche brillante haute définition (qualité muséale) ou sur toile canvas artistique, pour des couleurs éclatantes et durables.",
                 linkText: "Voir les matériaux →",
                 linkUrl: "materials.html"
             },
@@ -144,7 +144,7 @@ const SITE_CONFIG = {
         items: [
             {
                 icon: "✨",
-                title: "Bâche Oragite®",
+                title: "bâche premium",
                 description: "Impression sur bâche brillante de qualité muséale, offrant des couleurs vibrantes et une netteté exceptionnelle.",
                 price: "À partir de xxxx MAD",  // xxxx = masqué
                 features: [
@@ -199,7 +199,7 @@ const SITE_CONFIG = {
             {
                 icon: "🎨",
                 title: "Cadre Américain (Flottant)",
-                features: ["Design contemporain", "Effet flottant", "Protection", "Idéal Oragite®"]
+                features: ["Design contemporain", "Effet flottant", "Protection", "Idéal haute définition"]
             },
             {
                 icon: "📏",
@@ -268,7 +268,7 @@ const SITE_CONFIG = {
                 image: "images/produit-5.png",
                 badge: "Nouveau",
                 price: "À partir de xxxx MAD",
-                material: "Bâche Oragite®",
+                material: "bâche premium",
                 finish: "Cadre Américain",
                 colors: ["Terracotta", "Ocre", "Beige"],
                 ambiance: "Chaleureuse et moderne"
@@ -302,7 +302,7 @@ const SITE_CONFIG = {
         items: [
             {
                 stars: 5,
-                text: "Un tableau magnifique qui a complètement transformé mon salon. La qualité d'impression sur Oragite est exceptionnelle, les couleurs sont vibrantes !",
+                text: "Un tableau magnifique qui a complètement transformé mon salon. La qualité d'impression sur haute définition est exceptionnelle, les couleurs sont vibrantes !",
                 author: "Sarah A.",
                 location: "Marrakech",
                 initials: "SA"
@@ -363,7 +363,7 @@ const SITE_CONFIG = {
     // ========================================
     seo: {
         title: "Tableaux Muraux - Art Mural Artisanal | Tableaux Premium",
-        description: "Tableaux Muraux - Tableaux muraux artisanaux créés par IA et fabriqués à la main à Marrakech. Impression premium sur bâche Oragite et toile canvas.",
+        description: "Tableaux Muraux - Tableaux muraux artisanaux créés par IA et fabriqués à la main à Marrakech. Impression premium sur bâche premium et toile canvas.",
         keywords: [
             "tableau mural marrakech",
             "art mural maroc",
@@ -373,7 +373,7 @@ const SITE_CONFIG = {
             "décoration murale",
             "art IA",
             "tableau artisanal",
-            "bâche oragite",
+            "bâche premium",
             "artisanat marocain"
         ]
     }
@@ -417,5 +417,6 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { SITE_CONFIG, getWhatsAppLink, getProductWhatsAppLink };
 }
+
 
 

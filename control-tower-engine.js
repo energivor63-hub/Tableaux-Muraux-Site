@@ -52,7 +52,7 @@ if (!fs.existsSync(IMAGES_DIR)) {
 export const ALLOWED_CATEGORIES = ["abstrait", "paysages", "calligraphie", "moderne", "geometrique", "floral", "autres"];
 export const ALLOWED_STYLES = ["contemporain", "traditionnel", "minimaliste", "boheme", "art-deco", "autres"];
 export const ALLOWED_ENVIRONNEMENTS = ["salon", "chambre", "bureau", "entree", "riad", "cabinet", "ecole-primaire", "autres"];
-export const ALLOWED_MATERIAUX = ["Toile Canvas", "Bâche Oragite®"];
+export const ALLOWED_MATERIAUX = ["Toile Canvas", "bâche premium"];
 export const ALLOWED_MONTAGES = ["Cadre Américain", "Châssis Bois"];
 
 // ⚙️ Paramètres Groq Vision
@@ -234,13 +234,13 @@ INSTRUCTIONS D'OBSERVATION VISUELLE STRICTE :
 
 3. SUPPORT ET MATÉRIAU RECOMMANDÉ (champ "materiauRecommande") :
    - Choisis "Toile Canvas" si l'image présente un grain texturé artistique, un effet de peinture sur toile, un fond granuleux, de la matière ou des touches dorées artisanales.
-   - Choisis "Bâche Oragite®" si l'image est un rendu photographique ultra-lisse, brillant, à haute netteté ou contemporain.
+   - Choisis "bâche premium" si l'image est un rendu photographique ultra-lisse, brillant, à haute netteté ou contemporain.
 
 4. TAXONOMIE OBLIGATOIRE (valeurs exactes autorisées) :
    - "categorie" : STRICTEMENT l'une de ["abstrait", "paysages", "calligraphie", "moderne", "geometrique", "floral", "autres"].
    - "style" : STRICTEMENT l'une de ["contemporain", "traditionnel", "minimaliste", "boheme", "art-deco", "autres"].
    - "environnement" : STRICTEMENT l'une de ["salon", "chambre", "bureau", "entree", "riad", "cabinet", "ecole-primaire", "autres"].
-   - "materiauRecommande" : STRICTEMENT "Toile Canvas" ou "Bâche Oragite®".
+   - "materiauRecommande" : STRICTEMENT "Toile Canvas" ou "bâche premium".
    - "montageRecommande" : STRICTEMENT "Cadre Américain" ou "Châssis Bois".
    - "badge" : "Nouveau" (ou "Coup de cœur", "Collection Riad", "Édition Limitée", ou null).
    - "prix" : "À partir de 180 MAD" (ou "À partir de 120 MAD", "À partir de 220 MAD", "À partir de 250 MAD").
@@ -302,8 +302,8 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
       const environnement = normalizeTaxonomy(parsed.environnement, ALLOWED_ENVIRONNEMENTS, 'salon');
 
       let materiauRecommande = 'Toile Canvas';
-      if (parsed.materiauRecommande && parsed.materiauRecommande.toLowerCase().includes('oragite')) {
-        materiauRecommande = 'Bâche Oragite®';
+      if (parsed.materiauRecommande && parsed.materiauRecommande.toLowerCase().includes('haute définition')) {
+        materiauRecommande = 'bâche premium';
       }
 
       let montageRecommande = 'Cadre Américain';
@@ -410,8 +410,8 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
       const environnement = normalizeTaxonomy(parsed.environnement, ALLOWED_ENVIRONNEMENTS, 'salon');
       
       let materiauRecommande = 'Toile Canvas';
-      if (parsed.materiauRecommande && parsed.materiauRecommande.toLowerCase().includes('oragite')) {
-        materiauRecommande = 'Bâche Oragite®';
+      if (parsed.materiauRecommande && parsed.materiauRecommande.toLowerCase().includes('haute définition')) {
+        materiauRecommande = 'bâche premium';
       }
 
       let montageRecommande = 'Cadre Américain';

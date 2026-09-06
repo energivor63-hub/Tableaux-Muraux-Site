@@ -106,7 +106,7 @@ jamais affiché aux clients). Il n'est **jamais modifié** par le script.
      image: "images/mon-tableau.jpg",
      prix: "À partir de 850 MAD",
      badge: "Nouveau",
-     materiauRecommande: "Bâche Oragite®",
+     materiauRecommande: "bâche premium",
      montageRecommande: "Cadre Américain",
      couleurs: ["Beige", "Terracotta"],
      ambiance: "Chaleureuse et moderne"
@@ -379,3 +379,4 @@ Si vous rencontrez un problème non documenté ici :
 
 **Dernière mise à jour** : 27 août 2026
 **Version du site** : Tableaux Muraux v2.3 (rebranding + module Social Studio)
+

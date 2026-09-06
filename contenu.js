@@ -1,4 +1,4 @@
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 //  📝 FICHIER DE CONTENU - Tableaux Muraux
 // ═══════════════════════════════════════════════════════════════
 //  ✏️  MODIFIEZ CE FICHIER pour mettre à jour votre site web
@@ -52,7 +52,7 @@ const CONTENU_SITE = {
     titreAvant: "L'art mural",
     titreItalique: "réinventé",
     titreApres: "à Marrakech",
-    sousTitre: "Des tableaux uniques, co-créés par l'intelligence artificielle et fabriqués à la main par nos artisans. Impression premium sur bâche Oragite® et toile canvas, encadrement artisanal en bois.",
+    sousTitre: "Des tableaux uniques, co-créés par l'intelligence artificielle et fabriqués à la main par nos artisans. Impression premium sur bâche premium et toile canvas, encadrement artisanal en bois.",
     boutonPrincipal: "Découvrir la collection →",
     boutonSecondaire: "Notre processus"
   },
@@ -74,7 +74,7 @@ const CONTENU_SITE = {
       numero: 2,
       icone: "🖨️",
       titre: "Impression Premium",
-      description: "Chaque œuvre est imprimée sur bâche brillante Oragite® (qualité muséale) ou sur toile canvas artistique, pour des couleurs éclatantes et durables.",
+      description: "Chaque œuvre est imprimée sur bâche brillante haute définition (qualité muséale) ou sur toile canvas artistique, pour des couleurs éclatantes et durables.",
       lien: "#materials"
     },
     {
@@ -93,7 +93,7 @@ const CONTENU_SITE = {
   materiaux: [
     {
       icone: "✨",
-      titre: "Bâche Oragite®",
+      titre: "bâche premium",
       description: "Impression sur bâche brillante de qualité muséale, offrant des couleurs vibrantes et une netteté exceptionnelle. Idéale pour les pièces modernes et contemporaines.",
       features: [
         "Couleurs éclatantes et durables",
@@ -144,7 +144,7 @@ const CONTENU_SITE = {
           "Prêt à accrocher",
           "Aspect traditionnel galerie",
           "Légèreté et rigidité",
-          "Idéal pour Oragite® et canvas"
+          "Idéal pour haute définition et canvas"
         ]
       },
       {
@@ -155,7 +155,7 @@ const CONTENU_SITE = {
           "Design contemporain",
           "Effet flottant élégant",
           "Protection de l'œuvre",
-          "Idéal pour Oragite® et canvas"
+          "Idéal pour haute définition et canvas"
         ]
       }
     ],
@@ -263,7 +263,7 @@ const CONTENU_SITE = {
       imageFallback: "🏺",
       prix: "À partir de 100 MAD",
       badge: "Nouveau",
-      materiauRecommande: "Bâche Oragite®",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
       couleurs: ["Doré", "Marron", "Bleu", "Doré"],
       ambiance: "Chaleureuse, authentique et raffinée",
@@ -278,7 +278,7 @@ const CONTENU_SITE = {
       imageFallback: "🏺",
       prix: "À partir de 190 MAD",
       badge: "Nouveau",
-      materiauRecommande: "Bâche Oragite®",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
       couleurs: ["Ocre", "Bleu", "Marron", "Doré"],
       ambiance: "Chaleureuse et authentique",
@@ -293,7 +293,7 @@ const CONTENU_SITE = {
       imageFallback: "🎨",
       prix: "À partir de 100 MAD",
       badge: "Nouveau",
-      materiauRecommande: "Bâche Oragite®",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
       couleurs: ["Beige", "Bleu", "Rose", "Vert"],
       ambiance: "Authentique et apaisante",
@@ -308,7 +308,7 @@ const CONTENU_SITE = {
       imageFallback: "🎨",
       prix: "À partir de 70 MAD",
       badge: "Nouveau",
-      materiauRecommande: "Bâche Oragite®",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
       couleurs: ["Jaune", "Rose", "Bleu", "Noir"],
       ambiance: "Chaleureuse et moderne"
@@ -368,7 +368,7 @@ const CONTENU_SITE = {
       imageFallback: "🌅",
       prix: "À partir de 190 MAD",
       badge: "Élégance Terre",
-      materiauRecommande: "Bâche Oragite®",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
       couleurs: ["Brun", "Ocre", "Beige", "Crème"],
       ambiance: "Chaleureuse et apaisante"
@@ -417,7 +417,7 @@ const CONTENU_SITE = {
       initiales: "SA",
       nom: "Sarah A.",
       ville: "Marrakech",
-      texte: "Un tableau magnifique qui a complètement transformé mon salon. La qualité d'impression sur Oragite est exceptionnelle, les couleurs sont vibrantes ! J'ai opté pour le cadre américain flottant, c'est d'une élégance rare.",
+      texte: "Un tableau magnifique qui a complètement transformé mon salon. La qualité d'impression sur haute définition est exceptionnelle, les couleurs sont vibrantes ! J'ai opté pour le cadre américain flottant, c'est d'une élégance rare.",
       note: 5
     },
     {
@@ -472,7 +472,7 @@ const CONTENU_SITE = {
     materials: {
       meta: {
         title: "Nos Matériaux Premium | Tableaux Muraux",
-        description: "Des matériaux de qualité professionnelle pour des tableaux qui durent toute une vie : Bâche Oragite® brillante et Toile Canvas artistique sur cadres bois de Marrakech."
+        description: "Des matériaux de qualité professionnelle pour des tableaux qui durent toute une vie : bâche premium brillante et Toile Canvas artistique sur cadres bois de Marrakech."
       },
       nav: {
         brandName: "Tableaux",
@@ -488,10 +488,10 @@ const CONTENU_SITE = {
         breadcrumbHome: "Accueil",
         breadcrumbCurrent: "Nos Matériaux"
       },
-      oragite: {
-        visual: "images/bache-oragite.jpg",
-        title: "Bâche Oragite® Brillante",
-        subtitle: "La référence en matière d'impression grand format. <strong>Oragite®</strong> est une marque du groupe allemand <strong>ORAFOL</strong>, reconnue mondialement pour la qualité professionnelle de ses supports d'impression numérique.",
+      haute définition: {
+        visual: "images/bache-haute définition.jpg",
+        title: "bâche premium Brillante",
+        subtitle: "La référence en matière d'impression grand format. <strong>haute définition</strong> est une marque du groupe allemand <strong>ORAFOL</strong>, reconnue mondialement pour la qualité professionnelle de ses supports d'impression numérique.",
         features: [
           {
             title: "Couleurs vibrantes et éclatantes",
@@ -546,23 +546,23 @@ const CONTENU_SITE = {
         title: "Comparaison détaillée",
         subtitle: "Choisissez le matériau idéal pour votre projet",
         thFeature: "Caractéristique",
-        thOragite: "Oragite® Brillante",
+        thhaute définition: "haute définition Brillante",
         thCanvas: "Canvas Artistique",
-        row1: { name: "Finition", oragite: "Brillante", canvas: "Mate texturée" },
-        row2: { name: "Intensité des couleurs", oragiteRating: "★★★★★", canvasRating: "★★★★☆" },
-        row3: { name: "Résistance UV", oragiteCheck: "✓", canvasCheck: "✓" },
-        row4: { name: "Facilité d'entretien", oragiteRating: "★★★★★", canvasRating: "★★★☆☆" },
-        row5: { name: "Aspect traditionnel", oragiteRating: "★★★☆☆", canvasRating: "★★★★★" },
-        row6: { name: "Style moderne", oragiteRating: "★★★★★", canvasRating: "★★★☆☆" },
-        row7: { name: "Prix (taille standard)", oragite: "À partir de 70 MAD", canvas: "À partir de 120 MAD" }
+        row1: { name: "Finition", haute définition: "Brillante", canvas: "Mate texturée" },
+        row2: { name: "Intensité des couleurs", haute définitionRating: "★★★★★", canvasRating: "★★★★☆" },
+        row3: { name: "Résistance UV", haute définitionCheck: "✓", canvasCheck: "✓" },
+        row4: { name: "Facilité d'entretien", haute définitionRating: "★★★★★", canvasRating: "★★★☆☆" },
+        row5: { name: "Aspect traditionnel", haute définitionRating: "★★★☆☆", canvasRating: "★★★★★" },
+        row6: { name: "Style moderne", haute définitionRating: "★★★★★", canvasRating: "★★★☆☆" },
+        row7: { name: "Prix (taille standard)", haute définition: "À partir de 70 MAD", canvas: "À partir de 120 MAD" }
       },
       useCases: {
         title: "Quel matériau pour quelle pièce ?",
         subtitle: "Nos recommandations selon l'ambiance souhaitée",
-        cardOragite: {
+        cardhaute définition: {
           visual: "images/hero-marrakech.jpg",
           icon: "✨",
-          title: "Oragite® Brillante",
+          title: "haute définition Brillante",
           desc: "Idéale pour les espaces modernes qui ont besoin d'éclat et de luminosité. La finition brillante capte la lumière et dynamise la pièce.",
           rooms: ["🛋️ Salon moderne", "🏢 Bureau", "🍽️ Salle à manger", "🏪 Commerce"]
         },
@@ -648,7 +648,7 @@ const CONTENU_SITE = {
         title: "Impression Premium",
         desc: "Une fois l'œuvre validée, elle est imprimée sur des supports de qualité professionnelle. Nous utilisons exclusivement des matériaux haut de gamme pour garantir des couleurs éclatantes et une durabilité exceptionnelle.",
         features: [
-          { icon: "✨", title: "Bâche Oragite® brillante", desc: "Qualité professionnelle avec couleurs vibrantes et résistance aux UV" },
+          { icon: "✨", title: "bâche premium brillante", desc: "Qualité professionnelle avec couleurs vibrantes et résistance aux UV" },
           { icon: "🎨", title: "Toile canvas artistique", desc: "Texture traditionnelle pour un rendu authentique de galerie d'art" },
           { icon: "🖨️", title: "Impression haute résolution", desc: "Technologie d'impression de dernière génération pour une netteté parfaite" }
         ]
@@ -774,7 +774,7 @@ const CONTENU_SITE = {
         boxIntro: "Chez Tableaux Muraux, nos œuvres sont le fruit d'une <strong>co-création entre intelligence artificielle et artisanat humain</strong> :",
         boxItems: [
           "<strong>Conception numérique :</strong> Nos artistes guident des modèles d'IA pour créer des compositions originales",
-          "<strong>Impression premium :</strong> Sur bâche Oragite® brillante ou toile canvas",
+          "<strong>Impression premium :</strong> Sur bâche premium brillante ou toile canvas",
           "<strong>Fabrication artisanale :</strong> Cadres en bois réalisés à la main par nos artisans de Marrakech"
         ],
         boxNote: "Les données que vous nous fournissez pour personnaliser vos œuvres (thèmes, couleurs, dimensions) sont utilisées <strong>uniquement</strong> pour guider ce processus créatif et ne sont jamais partagées avec des tiers à des fins d'entraînement d'IA."
@@ -941,4 +941,5 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONTENU_SITE;
 }
+
 

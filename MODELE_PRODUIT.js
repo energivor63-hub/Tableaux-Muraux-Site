@@ -53,8 +53,8 @@
       badge: "Nouveau",
       
       // 🧱 MATÉRIAU RECOMMANDÉ
-      // Options : "Bâche Oragite®" ou "Toile Canvas"
-      materiauRecommande: "Bâche Oragite®",
+      // Options : "bâche premium" ou "Toile Canvas"
+      materiauRecommande: "bâche premium",
       
       // 🖼️ MONTAGE RECOMMANDÉ
       // Options : "Cadre Américain" ou "Toile Tendue"
@@ -66,3 +66,4 @@
       // ✨ AMBIANCE (2-3 mots décrivant l'atmosphère)
       ambiance: "Chaleureuse et moderne"
     },
+

@@ -1,4 +1,4 @@
-﻿// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 //  📱 SOCIAL DATA — Tableaux Muraux (gestion réseaux sociaux)
 // ═══════════════════════════════════════════════════════════════
 //  ⚙️  Module statique : aucune API réelle, aucune publication
@@ -71,7 +71,7 @@ const socialData = {
     {
       id: "post-101",
       titre: "Zoom sur le Patio Traditionnel",
-      texte: "L'authenticité d'un patio de la médina immortalisée sur bâche Oragite premium. Disponible avec cadre américain en bois massif.",
+      texte: "L'authenticité d'un patio de la médina immortalisée sur bâche premium premium. Disponible avec cadre américain en bois massif.",
       hashtags: ["#MarrakechArt", "#ArtMural", "#DecorationMaroc", "#TableauModerne", "#MadeInMorocco"],
       image: "images/produit-1.jpg",
       reseaux: ["instagram", "facebook", "pinterest"],
@@ -92,9 +92,9 @@ const socialData = {
     },
     {
       id: "post-103",
-      titre: "Conseil Déco : Choisir entre Toile Canvas & Oragite",
-      texte: "Canvas pour la texture fine d'artiste ou Oragite pour des contrastes intenses et une durabilité absolue ? Notre guide complet est disponible.",
-      hashtags: ["#ConseilDeco", "#ToileCanvas", "#Oragite", "#MarrakechArt"],
+      titre: "Conseil Déco : Choisir entre Toile Canvas & haute définition",
+      texte: "Canvas pour la texture fine d'artiste ou haute définition pour des contrastes intenses et une durabilité absolue ? Notre guide complet est disponible.",
+      hashtags: ["#ConseilDeco", "#ToileCanvas", "#haute définition", "#MarrakechArt"],
       image: "images/detail_texture.jpg",
       reseaux: ["facebook"],
       statut: "brouillon",
@@ -113,4 +113,5 @@ const socialData = {
     { id: "media-4", src: "images/detail_texture.jpg",            titre: "Texture et Finition",      tag: "Matériaux" }
   ]
 };
+
 
