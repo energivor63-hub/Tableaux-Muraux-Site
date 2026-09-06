@@ -349,7 +349,7 @@ Un module statique de gestion des réseaux sociaux (Facebook, Instagram, Pintere
 Les comptes simulés utilisent la nouvelle identité visuelle :
 - Instagram : `@ideawoven.marrakech`
 - Facebook : `tableauxmuraux.maroc`
-- Pinterest : `@tableauxmuraux_art`
+- Pinterest : `@ideawovenartmural`
 
 Aucune API réelle n'est connectée : il s'agit uniquement d'une maquette statique pour concevoir l'interface avant toute intégration future.
 

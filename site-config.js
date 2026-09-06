@@ -49,8 +49,8 @@ const SITE_CONFIG = {
         },
         pinterest: {
             name: "Tableaux Muraux Art",
-            username: "tableauxmuraux_art",
-            url: "https://pinterest.com/tableauxmuraux_art",
+            username: "ideawovenartmural",
+            url: "https://pinterest.com/ideawovenartmural/",
             label: "Pinterest"
         },
         website: {

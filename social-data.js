@@ -39,7 +39,7 @@ const socialData = {
     {
       id: "pinterest",
       plateforme: "Pinterest",
-      handle: "@tableauxmuraux_art",
+      handle: "@ideawovenartmural",
       nom: "Tableaux Muraux | Déco & Art Marrakech",
       icone: "📌",
       statut: "connecte",

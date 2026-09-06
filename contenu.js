@@ -449,7 +449,7 @@ const CONTENU_SITE = {
   reseaux: {
     instagram: "https://instagram.com/ideawoven.marrakech",
     facebook: "https://facebook.com/profile.php?id=952942547902065",
-    pinterest: "https://pinterest.com/tableauxmuraux_art",
+    pinterest: "https://pinterest.com/ideawovenartmural/",
     siteWeb: "https://energivor63-hub.github.io/Tableaux-Muraux-Site"
   },
 
