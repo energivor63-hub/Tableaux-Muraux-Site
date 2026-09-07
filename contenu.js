@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 //  ✏️  MODIFIEZ CE FICHIER pour mettre à jour votre site web
 //  📚 Consultez GUIDE_MODIFICATION.md pour les instructions
-//  🔄 Après modification, redéployez via Netlify Drop
+//  🔄 Après modification, commit + push sur GitHub (déploiement automatique)
 // ═══════════════════════════════════════════════════════════════
 
 const CONTENU_SITE = {
@@ -299,19 +299,19 @@ const CONTENU_SITE = {
       ambiance: "Authentique et apaisante",
     },
     {
-      nom: "Tableau Géométrique Abstrait",
-      description: "Patio marocain baigné de lumière, fontaine centrale ciselée, arches élégantes et mosaïques raffinées créant une atmosphère paisible et authentique.",
-      categorie: "moderne",
+      nom: "Éclosion Florale de Marrakech",
+      description: "Composition florale monumentale aux pétales crème, rouges et bleus, sculptée en relief sur un fond lumineux. Une œuvre éclatante qui apporte fraîcheur et élégance à un salon ou une entrée.",
+      categorie: "floral",
       style: "contemporain",
-      environnement: "riad",
+      environnement: "salon",
       image: "images/produit-5.jpg",
-      imageFallback: "🎨",
+      imageFallback: "🌸",
       prix: "À partir de 70 MAD",
       badge: "Nouveau",
       materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
-      couleurs: ["Jaune", "Rose", "Bleu", "Noir"],
-      ambiance: "Chaleureuse et moderne"
+      couleurs: ["Crème", "Rouge", "Bleu", "Doré"],
+      ambiance: "Éclatante et raffinée",
     },
     {
       nom: "Cour Riad Andalou",
@@ -344,34 +344,34 @@ const CONTENU_SITE = {
       ambiance: "Chaleureuse, majestueuse"
     },
     {
-      nom: "Terres Murmurantes",
-      description: "Abstraction minérale aux tons bruns, ocres et beiges, évoquant la douceur et la chaleur des intérieurs apaisants.",
-      categorie: "moderne",
+      nom: "Jardin de Minuit",
+      description: "Nature morte florale aux tons profonds : violet, fuchsia et or sur fond obscur. Une pièce dramatique et feutrée pour une chambre ou un salon intime.",
+      categorie: "floral",
       style: "boheme",
-      environnement: "salon",
+      environnement: "chambre",
       image: "images/produit-8.jpg",
-      imageFallback: "🪨",
+      imageFallback: "🌺",
       prix: "À partir de 100 MAD",
       badge: null,
       materiauRecommande: "Toile Canvas",
       montageRecommande: "Toile Tendue",
-      couleurs: ["Bleu Majorelle", "Jaune", "Vert"],
-      ambiance: "Fraîche et inspirante"
+      couleurs: ["Violet", "Fuchsia", "Or", "Noir"],
+      ambiance: "Feutrée et dramatique",
     },
     {
-      nom: "Coucher de Soleil Médina",
-      description: "Abstraction lyrique évoquant les lumières dorées de la médina au crépuscule. Les dégradés chauds apportent une touche romantique et poétique.",
+      nom: "Triptyque Horizons Minéraux",
+      description: "Triptyque abstrait aux veines minérales brunes, cuivrées et crème, évoquant des strates de terre et de lumière. Une pièce panoramique qui structure un salon contemporain.",
       categorie: "abstrait",
       style: "contemporain",
-      environnement: "chambre",
+      environnement: "salon",
       image: "images/produit-9.jpg",
       imageFallback: "🌅",
       prix: "À partir de 190 MAD",
       badge: "Élégance Terre",
       materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
-      couleurs: ["Brun", "Ocre", "Beige", "Crème"],
-      ambiance: "Chaleureuse et apaisante"
+      couleurs: ["Brun", "Cuivre", "Crème", "Ocre"],
+      ambiance: "Chaleureuse et enveloppante",
     },
     {
       nom: "Cour Intérieure Marocaine",
@@ -448,7 +448,7 @@ const CONTENU_SITE = {
   // ─────────────────────────────────────────────────────────────
   reseaux: {
     instagram: "https://instagram.com/ideawoven.marrakech",
-    facebook: "https://facebook.com/profile.php?id=952942547902065",
+    facebook: "https://www.facebook.com/people/Ideawoven-Marrakech/61585944101181/",
     pinterest: "https://pinterest.com/ideawovenartmural/",
     siteWeb: "https://energivor63-hub.github.io/Tableaux-Muraux-Site"
   },
@@ -491,7 +491,7 @@ const CONTENU_SITE = {
       premium: {
         visual: "images/bache-premium.jpg",
         title: "bâche premium Brillante",
-        subtitle: "La référence en matière d'impression grand format. <strong>haute définition</strong> est une marque du groupe allemand <strong>ORAFOL</strong>, reconnue mondialement pour la qualité professionnelle de ses supports d'impression numérique.",
+        subtitle: "La référence en matière d'impression grand format. <strong>Bâche premium</strong> de qualité professionnelle, reconnue mondialement pour la qualité exceptionnelle de ses supports d'impression numérique.",
         features: [
           {
             title: "Couleurs vibrantes et éclatantes",
@@ -546,7 +546,7 @@ const CONTENU_SITE = {
         title: "Comparaison détaillée",
         subtitle: "Choisissez le matériau idéal pour votre projet",
         thFeature: "Caractéristique",
-        thpremium: "haute définition Brillante",
+        thpremium: "Bâche premium brillante",
         thCanvas: "Canvas Artistique",
         row1: { name: "Finition", premium: "Brillante", canvas: "Mate texturée" },
         row2: { name: "Intensité des couleurs", premiumRating: "★★★★★", canvasRating: "★★★★☆" },
@@ -562,7 +562,7 @@ const CONTENU_SITE = {
         cardpremium: {
           visual: "images/hero-marrakech.jpg",
           icon: "✨",
-          title: "haute définition Brillante",
+          title: "Bâche premium brillante",
           desc: "Idéale pour les espaces modernes qui ont besoin d'éclat et de luminosité. La finition brillante capte la lumière et dynamise la pièce.",
           rooms: ["🛋️ Salon moderne", "🏢 Bureau", "🍽️ Salle à manger", "🏪 Commerce"]
         },
