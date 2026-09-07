@@ -423,14 +423,14 @@ const CONTENU_SITE = {
     {
       initiales: "KM",
       nom: "Karim M.",
-      ville: "Casablanca",
+      ville: "Marrakech",
       texte: "J'adore le concept de co-création IA + artisanat. Le cadre en bois est superbe et le service client via WhatsApp est très réactif. J'ai commandé un format sur mesure 80×120 cm, parfait pour mon mur !",
       note: 5
     },
     {
       initiales: "FB",
       nom: "Fatima B.",
-      ville: "Rabat",
+      ville: "Marrakech",
       texte: "Offert en cadeau à ma mère, elle a adoré ! Le tableau sur canvas tendu a un rendu vraiment authentique, digne d'une galerie d'art. Livraison rapide et emballage soigné.",
       note: 5
     },

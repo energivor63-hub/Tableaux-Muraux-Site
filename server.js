@@ -20,6 +20,7 @@ import {
   listBackups,
   restoreBackup
 } from './control-tower-engine.js';
+import { handlePinterestPublish } from './buffer-pinterest.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -274,44 +275,112 @@ app.get('/dashboard.html', (req, res) => {
 });
 
 // Publication multi-plateformes (Composio pour FB/IG, Buffer pour Pinterest)
+// SESSION 10 : Pinterest est publié UNIQUEMENT dans le board officiel
+// « Nos meilleures œuvres — art mural marocain » (voir site-web/buffer-pinterest.js).
+// Board introuvable => erreur explicite (journal + toast dashboard) ; JAMAIS de
+// publication d'épingle sans board cible. Routage Composio (FB/IG) inchangé.
 app.post('/api/social/publish', async (req, res) => {
   try {
-    const { platform, content, mediaUrl, scheduleDate } = req.body;
-    
-    let result;
-    if (platform === 'facebook' || platform === 'instagram') {
-      const composioKey = process.env.COMPOSIO_API_KEY;
-      if (!composioKey) {
-        return res.json({ success: false, error: 'COMPOSIO_API_KEY manquante dans .env' });
-      }
-      result = { success: true, platform, message: `Publié via Composio (${platform})` };
-    } else if (platform === 'pinterest') {
-      const bufferKey = process.env.BUFFER_API_KEY;
-      if (!bufferKey) {
-        return res.json({ success: false, error: 'BUFFER_API_KEY manquante dans .env' });
-      }
-      result = { success: true, platform, message: 'Publié via Buffer (Pinterest)' };
-    } else {
-      return res.json({ success: false, error: `Plateforme non supportée : ${platform}` });
+    const body = req.body || {};
+    const mediaUrl = body.mediaUrl;
+    const scheduleDate = body.scheduleDate;
+    // Payload dashboard (« plateformes » + « copies ») ou legacy (« platform » + « content »)
+    const platforms = Array.isArray(body.plateformes) && body.plateformes.length > 0
+      ? body.plateformes
+      : (body.platform ? [body.platform] : []);
+    if (!platforms.length) {
+      return res.json({ success: false, error: 'Aucune plateforme cible dans la requête' });
     }
-    
-    // Logger dans le journal
+
+    // Pré-vérification des clés (comportement d'origine conservé : échec rapide, sans journal)
+    if (platforms.some((p) => p === 'facebook' || p === 'instagram') && !process.env.COMPOSIO_API_KEY) {
+      return res.json({ success: false, error: 'COMPOSIO_API_KEY manquante dans .env' });
+    }
+    if (platforms.includes('pinterest') && !process.env.BUFFER_API_KEY) {
+      return res.json({ success: false, error: 'BUFFER_API_KEY manquante dans .env' });
+    }
+
     let journal = [];
     if (fs.existsSync(SOCIAL_JOURNAL_PATH)) {
       journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
     }
-    journal.unshift({
-      id: `pub_${Date.now()}`,
-      date: new Date().toISOString(),
-      platform,
-      content,
-      mediaUrl,
-      status: 'published',
-      scheduleDate
-    });
+    const results = [];
+    const postUrls = {};
+    const errors = [];
+
+    for (const platform of platforms) {
+      if (platform === 'facebook' || platform === 'instagram') {
+        // Composio (Facebook + Instagram) — routage INCHANGÉ
+        results.push({ platform, success: true, message: `Publié via Composio (${platform})` });
+        journal.unshift({
+          id: `pub_${Date.now()}_${platform}`,
+          date: new Date().toISOString(),
+          platform,
+          content: body.content || (body.copies ? body.copies[platform] : undefined),
+          mediaUrl,
+          status: 'published',
+          scheduleDate
+        });
+      } else if (platform === 'pinterest') {
+        // Buffer (Pinterest) — ciblage OBLIGATOIRE du board officiel
+        try {
+          const outcome = await handlePinterestPublish({ body });
+          results.push({
+            platform,
+            success: true,
+            message: `Publié via Buffer (Pinterest) dans le board « ${outcome.board.name} »`,
+            board: outcome.board
+          });
+          postUrls.pinterest = outcome.boardUrl;
+          journal.unshift({
+            id: `pub_${Date.now()}_${platform}`,
+            date: new Date().toISOString(),
+            platform,
+            content: body.copies ? body.copies.pinterest : body.content,
+            mediaUrl,
+            status: 'published',
+            scheduleDate,
+            board: {
+              id: outcome.board.id,
+              serviceId: outcome.board.serviceId,
+              name: outcome.board.name,
+              url: outcome.board.url
+            }
+          });
+        } catch (pinErr) {
+          // Board introuvable / erreur Buffer : erreur explicite au journal,
+          // réponse en échec (toast « Tableau Pinterest introuvable » côté
+          // dashboard) et AUCUNE création d'épingle côté Buffer.
+          errors.push(pinErr.message);
+          journal.unshift({
+            id: `pub_${Date.now()}_${platform}`,
+            date: new Date().toISOString(),
+            platform,
+            content: body.copies ? body.copies.pinterest : body.content,
+            mediaUrl,
+            status: 'error',
+            scheduleDate,
+            error: pinErr.message
+          });
+        }
+      } else {
+        errors.push(`Plateforme non supportée : ${platform}`);
+      }
+    }
+
     fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
-    
-    res.json(result);
+
+    if (errors.length) {
+      // Le dashboard affiche result.error dans la statusBox + le toast d'échec.
+      return res.json({ success: false, error: errors[0], errors, results });
+    }
+    res.json({
+      success: true,
+      platform: platforms.join(','),
+      message: `Publié via ${results.map((r) => (r.platform === 'pinterest' ? 'Buffer (board officiel)' : 'Composio')).join(' + ')}`,
+      results,
+      postUrls
+    });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
