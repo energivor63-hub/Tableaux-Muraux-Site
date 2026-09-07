@@ -15,6 +15,14 @@
 //  - Publication : mutation `createPost` + metadata.pinterest.boardServiceId
 //    + metadata.pinterest.url = lien de destination du site
 //    (test_buffer_publish.py v5 FINAL).
+//
+// SESSION 13 (introspection GraphQL en direct, 07/09/2026) : transmission de
+// l'alt text ET de la transparence IA à Buffer.
+//  - altText : champ `ImageMetadataInput.altText` (« Alternative text for
+//    accessibility ») via `assets[].image.metadata.altText`. Supporté.
+//  - disclosure IA : champ `CreatePostInput.aiAssisted` (« If this post was
+//    created with the help of AI »). Supporté → on envoie `aiAssisted: true`.
+//  - Test brouillon : `CreatePostInput.saveToDraft` + `Mutation.deletePost(id)`.
 // ═══════════════════════════════════════════════════════════════════════
 
 // BOARD CIBLE (exact) — constantes de référence
@@ -109,7 +117,12 @@ export async function resolvePinterestBoard({ apiKey, channelId, env = process.e
 }
 
 // Publication de l'épingle dans le board (mutation createPost, v5 FINAL)
-export async function publishPinToBuffer({ apiKey, channelId, board, title, description, link, imageUrl }) {
+// SESSION 13 : transmet l'alt text (`image.metadata.altText`) et la disclosure
+// IA (`aiAssisted: true`) ; `saveToDraft` permet le test en brouillon.
+export async function publishPinToBuffer({
+  apiKey, channelId, board, title, description, link, imageUrl,
+  altText, aiAssisted = true, saveToDraft = false
+}) {
   const input = {
     channelId,
     text: description || '',
@@ -118,9 +131,19 @@ export async function publishPinToBuffer({ apiKey, channelId, board, title, desc
     needsApproval: false,
     metadata: { pinterest: { boardServiceId: board.serviceId } }
   };
+  // SESSION 13 : transparence IA obligatoire (schéma : « If this post was
+  // created with the help of AI »)
+  if (aiAssisted) input.aiAssisted = true;
+  if (saveToDraft) input.saveToDraft = true;
   if (title) input.metadata.pinterest.title = title;
   if (link) input.metadata.pinterest.url = link; // lien de destination du site (#gallery)
-  if (imageUrl) input.assets = [{ image: { url: imageUrl } }];
+  if (imageUrl) {
+    const image = { url: imageUrl };
+    // SESSION 13 : alt text via ImageMetadataInput.altText (« Alternative text
+    // for accessibility »), valeur = champ « Texte alternatif » du dashboard
+    if (altText) image.metadata = { altText };
+    input.assets = [{ image }];
+  }
   const mutation = `
     mutation CreatePost($input: CreatePostInput!) {
       createPost(input: $input) {
@@ -165,7 +188,10 @@ export async function handlePinterestPublish({ body, env = process.env } = {}) {
     title: pin.title || '',
     description: pin.description || pin.desc || (body && body.content) || '',
     link: pin.link || '',
-    imageUrl: (body && body.mediaUrl) || ''
+    imageUrl: (body && body.mediaUrl) || '',
+    // SESSION 13 : alt text du dashboard (« Texte alternatif ») + disclosure IA
+    altText: (pin.alt || '').trim() || null,
+    aiAssisted: true
   });
   return {
     board,
