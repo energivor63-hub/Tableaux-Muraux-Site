@@ -329,19 +329,19 @@ const CONTENU_SITE = {
       ambiance: "Chaleureuse, raffinée"
     },
     {
-      nom: "Oasis Mauresque",
-      description: "Une scène mauresque riche en zelliges, arches sculptées et lanternes dorées, sublimée par des tons terre et bleu pour une ambiance chaleureuse et raffinée.",
-      categorie: "geometrique",
+      nom: "Harmonie Dorée et Sacrée",
+      description: "Cette œuvre sublime met en valeur une calligraphie arabe majestueuse en relief doré, posée sur un fond texturé aux teintes chaudes d'or et d'ocre. Les motifs géométriques et les arabesques vert d'eau en arrière-plan ajoutent une profondeur spirituelle et une élégance traditionnelle à l'ensemble. L'éclairage naturel accentue les reliefs et la richesse des matériaux, créant une ambiance chaleureuse et apaisante.",
+      categorie: "calligraphie",
       style: "traditionnel",
-      environnement: "entree",
+      environnement: "salon",
       image: "images/produit-7.jpg",
-      imageFallback: "🎨",
-      prix: "À partir de 100 MAD",
-      badge: null,
+      imageFallback: "📜",
+      prix: "A partir de 999 MAD",
+      badge: "Nouveau",
       materiauRecommande: "Toile Canvas",
       montageRecommande: "Cadre Américain",
-      couleurs: ["Terracotta", "Bleu", "Beige", "Doré", "Brun"],
-      ambiance: "Chaleureuse, majestueuse"
+      couleurs: ["Or", "Bronze", "Ocre", "Vert d'eau"],
+      ambiance: "Spirituelle, noble et chaleureuse",
     },
     {
       nom: "Jardin de Minuit",
