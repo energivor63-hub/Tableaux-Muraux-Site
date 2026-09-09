@@ -14,8 +14,18 @@ import {
   PYTHON_SCRIPT,
   hasApiKeyConfigured,
   detectPendingMockup,
+  detectDroppedMode,
+  readPendingMeta,
+  writePendingMeta,
+  clearPendingMeta,
   getCurrentCatalog,
   executeAutoIntegration,
+  detectReplacementStaging,
+  getReplacementState,
+  clearReplacementStaging,
+  prepareReplacement,
+  regenerateFiche,
+  executeReplacement,
   getJournalHistory,
   listBackups,
   restoreBackup
@@ -61,6 +71,18 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }
 });
 
+// Multer dédié au remplacement : fichier temporaire à nom unique — ne touche JAMAIS produit-0.*
+const uploadStaging = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+      cb(null, IMAGES_DIR);
+    },
+    filename: (req, file, cb) => cb(null, '_tmp_replace_' + Date.now() + (path.extname(file.originalname).toLowerCase() || '.jpg'))
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
+
 // Endpoint de contrôle de santé
 app.get('/api/health', (req, res) => {
   res.type('application/json').json({
@@ -86,6 +108,8 @@ app.get('/api/control-tower/status', (req, res) => {
     const journal = getJournalHistory();
     const backups = listBackups();
     const hasKey = hasApiKeyConfigured();
+    const pendingMeta = readPendingMeta();
+    const replacementState = getReplacementState();
 
     res.type('application/json').json({
       success: true,
@@ -96,6 +120,10 @@ app.get('/api/control-tower/status', (req, res) => {
       hasApiKey: hasKey,
       hasPendingMockup: pending.exists,
       pendingMockup: pending,
+      pendingMode: pendingMeta ? pendingMeta.mode : null,
+      pendingOriginalName: pendingMeta ? (pendingMeta.originalName || null) : null,
+      pendingProductRank: pendingMeta && pendingMeta.productRank ? Number(pendingMeta.productRank) : null,
+      replacementState,
       totalCatalogProducts: catalog.length,
       currentTopProduct: catalog.length > 0 ? catalog[0] : null,
       lastIntegration: journal.length > 0 ? journal[0] : null,
@@ -107,15 +135,28 @@ app.get('/api/control-tower/status', (req, res) => {
   }
 });
 
-// 2. Upload de maquette (Multipart)
+// 2. Upload de maquette (Multipart) — zone GAUCHE (insertion produit-0)
 app.post('/api/control-tower/upload-mockup', upload.single('mockup'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).type('application/json').json({ success: false, error: 'Aucun fichier image reçu.' });
     }
+    // Détection du mode (insert / replace / notfound) + méta-données pour la Tour
+    const catalog = getCurrentCatalog();
+    const originalName = req.file.originalname || req.file.filename || 'produit-0.jpg';
+    const detected = detectDroppedMode(originalName, catalog);
     const pending = detectPendingMockup();
+    writePendingMeta({
+      originalName,
+      mode: detected.mode === 'replace' ? 'replace' : 'insert',
+      productRank: detected.mode === 'replace' ? detected.productRank : 0,
+      detectedAt: new Date().toISOString()
+    });
     res.type('application/json').json({
       success: true,
+      zone: 'insert',
+      mode: detected.mode === 'replace' ? 'replace' : 'insert',
+      productRank: detected.mode === 'replace' ? detected.productRank : 0,
       message: 'Maquette enregistrée avec succès sous produit-0 !',
       file: req.file,
       pendingMockup: pending
@@ -162,6 +203,7 @@ app.delete('/api/control-tower/clear-mockup', (req, res) => {
     if (pending.exists && fs.existsSync(pending.fullPath)) {
       fs.unlinkSync(pending.fullPath);
     }
+    clearPendingMeta();
     res.type('application/json').json({ success: true, message: 'Maquette en attente effacée.' });
   } catch (err) {
     console.error('Erreur clear mockup:', err);
@@ -247,6 +289,140 @@ app.get('/api/control-tower/fiche-txt', (req, res) => {
     }
   } catch (err) {
     res.status(500).type('text/plain; charset=utf-8').send('Erreur lecture fiche: ' + err.message);
+  }
+});
+
+// ==========================================
+// 🔁 MODE REMPLACEMENT (produit-N) — ROUTES API TOUR DE CONTRÔLE
+// ==========================================
+
+// 2ter. Upload de maquette de remplacement (zone DROITE) → staging images/_staging/produit-N.<ext>
+//  - nom produit-N (1 ≤ N ≤ catalogue)  → staging + méta
+//  - N hors plage                        → toast refus « produit-N introuvable » + AUCUNE écriture durable
+//  - sans numéro                         → toast « Pour remplacer, nommez le fichier produit-N.jpg. »
+app.post('/api/control-tower/upload-replacement', uploadStaging.single('mockup'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).type('application/json').json({ success: false, error: 'Aucun fichier image reçu.' });
+    }
+    const originalName = req.file.originalname || req.file.filename || '';
+    const catalog = getCurrentCatalog();
+    const m = String(originalName).trim().match(/produit[-_ ]?0*(\d+)/i);
+
+    // ⛔ Sans numéro : refus immédiat + suppression du fichier temporaire (ZÉRO écriture durable)
+    if (!m) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* déjà supprimé */ }
+      return res.status(400).type('application/json').json({
+        success: false,
+        refused: 'naming',
+        zone: 'replace',
+        error: 'Pour remplacer, nommez le fichier produit-N.jpg.',
+        messageClair: 'Pour remplacer, nommez le fichier produit-N.jpg.'
+      });
+    }
+
+    const n = parseInt(m[1], 10);
+    // ⛔ N hors plage : refus immédiat + suppression du fichier temporaire
+    if (n < 1 || n > catalog.length) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* déjà supprimé */ }
+      return res.status(400).type('application/json').json({
+        success: false,
+        refused: 'notfound',
+        zone: 'replace',
+        productRank: n,
+        catalogueN: catalog.length,
+        error: `produit-${n} introuvable (catalogue : 1..${catalog.length}) — dépôt annulé`,
+        messageClair: `produit-${n} introuvable (catalogue : 1..${catalog.length}) — dépôt annulé`
+      });
+    }
+
+    // ✅ Staging : copie vers _staging/produit-N.<ext> — l'image vivante images/produit-N.* reste intacte
+    if (!fs.existsSync(path.join(IMAGES_DIR, '_staging'))) {
+      fs.mkdirSync(path.join(IMAGES_DIR, '_staging'), { recursive: true });
+    }
+    const ext = path.extname(originalName).toLowerCase() || '.jpg';
+    const stagingName = `produit-${n}${ext}`;
+    const stagingFull = path.join(IMAGES_DIR, '_staging', stagingName);
+    fs.copyFileSync(req.file.path, stagingFull);
+    try { fs.unlinkSync(req.file.path); } catch (e) { /* nettoyage du fichier temporaire multer */ }
+
+    writePendingMeta({
+      originalName,
+      mode: 'replace',
+      productRank: n,
+      detectedAt: new Date().toISOString()
+    });
+
+    const staging = detectReplacementStaging();
+    res.type('application/json').json({
+      success: true,
+      zone: 'replace',
+      mode: 'replace',
+      productRank: n,
+      catalogueN: catalog.length,
+      message: `Maquette produit-${n} mise en staging (image vivante non touchée).`,
+      staging
+    });
+  } catch (err) {
+    console.error('Erreur upload remplacement:', err);
+    res.status(500).type('application/json').json({ success: false, error: err.message });
+  }
+});
+
+// État complet du mode remplacement (staging + méta)
+app.get('/api/control-tower/replacement-state', (req, res) => {
+  try {
+    res.type('application/json').json(getReplacementState());
+  } catch (err) {
+    res.status(500).type('application/json').json({ success: false, error: err.message });
+  }
+});
+
+// « Annuler » : purge du staging + méta (ZÉRO écriture durable)
+app.delete('/api/control-tower/clear-replacement-staging', (req, res) => {
+  try {
+    clearReplacementStaging();
+    res.type('application/json').json({ success: true, message: 'Staging de remplacement vidé (aucune écriture durable effectuée).' });
+  } catch (err) {
+    res.status(500).type('application/json').json({ success: false, error: err.message });
+  }
+});
+
+// « Lancer remplacer_produit_auto » : aperçu du remplacement (ancienne image vs staging + fiche pré-remplie)
+app.get('/api/control-tower/replacement-preview', async (req, res) => {
+  try {
+    const result = await prepareReplacement();
+    res.type('application/json').json(result);
+  } catch (err) {
+    console.error('Erreur aperçu remplacement:', err);
+    res.status(400).type('application/json').json({ success: false, error: err.message, messageClair: err.message });
+  }
+});
+
+// « Régénérer la fiche produit » : relance IA vision, réécrit TOUS les champs SAUF le prix saisi
+app.post('/api/control-tower/regenerate-fiche', async (req, res) => {
+  try {
+    const { prix } = req.body || {};
+    const result = await regenerateFiche(typeof prix === 'string' ? prix : undefined);
+    res.type('application/json').json(result);
+  } catch (err) {
+    console.error('Erreur régénération fiche:', err);
+    res.status(400).type('application/json').json({ success: false, error: err.message, messageClair: err.message });
+  }
+});
+
+// « Déployer » : exécution complète du remplacement (sauvegarde + copie + fiche + journal + commit/push)
+app.post('/api/control-tower/trigger-replacement', async (req, res) => {
+  try {
+    const { productRank, prix, champs } = req.body || {};
+    if (!productRank) {
+      return res.status(400).type('application/json').json({ success: false, error: 'productRank manquant dans la requête.' });
+    }
+    const result = await executeReplacement(Number(productRank), typeof prix === 'string' ? prix : undefined, champs);
+    res.type('application/json').json(result);
+  } catch (err) {
+    console.error('Erreur déclenchement remplacement:', err);
+    res.status(400).type('application/json').json({ success: false, error: err.message, messageClair: err.message });
   }
 });
 

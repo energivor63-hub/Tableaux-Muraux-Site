@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +36,11 @@ export const PYTHON_SCRIPT = path.join(ROOT_DIR, 'ajouter_produit_auto.py');
 
 export const IMAGES_DIR = path.join(SITE_DIR, 'images');
 export const CONTENU_JS = path.join(SITE_DIR, 'contenu.js');
+// 📄 Méta-données de la maquette en attente (nom d'origine déposé + mode détecté + analyse IA cachée)
+export const PENDING_META_FILE = path.join(IMAGES_DIR, '_pending-meta.json');
+// 🗂️ Staging des maquettes de remplacement : l'image vivante images/produit-N.* n'est JAMAIS
+// touchée avant « Déployer ». Le fichier déposé passe d'abord par _staging/produit-N.<ext>.
+export const STAGING_DIR = path.join(IMAGES_DIR, '_staging');
 export const BACKUPS_DIR = path.join(ROOT_DIR, 'sauvegardes');
 export const JOURNAL_JSON = path.join(ROOT_DIR, 'journal_integrations.json');
 export const JOURNAL_TXT = path.join(ROOT_DIR, 'journal_integrations.txt');
@@ -46,6 +51,9 @@ if (!fs.existsSync(BACKUPS_DIR)) {
 }
 if (!fs.existsSync(IMAGES_DIR)) {
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
+}
+if (!fs.existsSync(STAGING_DIR)) {
+  fs.mkdirSync(STAGING_DIR, { recursive: true });
 }
 
 // Taxonomies officielles de TableauxMuraux_Site (définies dans contenu.js)
@@ -113,6 +121,142 @@ export function detectPendingMockup() {
   }
 
   return { exists: false };
+}
+/**
+ * 🎯 Détection du MODE à partir du nom du fichier déposé :
+ *  - produit-0 (ou sans numéro)            → mode "insert"  (insertion N+1)
+ *  - produit-N avec N ∈ 1..catalogue.length → mode "replace" (remplacement sans décalage)
+ */
+export function detectDroppedMode(originalName, catalog) {
+  const name = String(originalName || '');
+  const m = name.trim().match(/produit[-_ ]?0*(\d+)/i);
+  if (!m) {
+    return { mode: 'insert', productRank: null };
+  }
+  const n = parseInt(m[1], 10);
+  if (n === 0) {
+    return { mode: 'insert', productRank: 0 };
+  }
+  if (n >= 1 && n <= catalog.length) {
+    return { mode: 'replace', productRank: n };
+  }
+  return { mode: 'notfound', productRank: n, catalogueN: catalog.length };
+}
+
+/**
+ * 📄 Lecture des méta-données de la maquette en attente (_pending-meta.json)
+ */
+export function readPendingMeta() {
+  try {
+    if (!fs.existsSync(PENDING_META_FILE)) return null;
+    return JSON.parse(fs.readFileSync(PENDING_META_FILE, 'utf-8'));
+  } catch (e) {
+    console.error('Erreur lecture méta-données maquette:', e);
+    return null;
+  }
+}
+
+/**
+ * 📄 Écriture des méta-données de la maquette en attente
+ */
+export function writePendingMeta(meta) {
+  try {
+    fs.writeFileSync(PENDING_META_FILE, JSON.stringify(meta, null, 2), 'utf-8');
+    return true;
+  } catch (e) {
+    console.error('Erreur écriture méta-données maquette:', e);
+    return false;
+  }
+}
+
+/**
+ * 📄 Effacement des méta-données de la maquette en attente
+ */
+export function clearPendingMeta() {
+  try {
+    if (fs.existsSync(PENDING_META_FILE)) {
+      fs.unlinkSync(PENDING_META_FILE);
+    }
+  } catch (e) {
+    console.error('Erreur effacement méta-données maquette:', e);
+  }
+}
+
+/**
+ * 🗂️ Détecte une maquette de remplacement dans _staging (produit-N.<ext>, N ≥ 1).
+ * L'image vivante images/produit-N.* n'est JAMAIS utilisée tant que « Déployer » n'est pas cliqué.
+ */
+export function detectReplacementStaging() {
+  try {
+    if (!fs.existsSync(STAGING_DIR)) return { exists: false };
+    let found = null;
+    for (const name of fs.readdirSync(STAGING_DIR)) {
+      const m = name.match(/^produit[-_ ]?0*(\d+)(\.(jpe?g|png|webp))$/i);
+      if (!m) continue;
+      const rank = parseInt(m[1], 10);
+      if (rank < 1) continue;
+      const fullPath = path.join(STAGING_DIR, name);
+      const stats = fs.statSync(fullPath);
+      if (stats.size > 100) {
+        const candidate = {
+          exists: true,
+          filename: name,
+          fullPath,
+          size: stats.size,
+          modified: stats.mtime,
+          modifiedMs: stats.mtimeMs,
+          ext: m[2].toLowerCase(),
+          rank,
+          url: `images/_staging/${name}?t=${stats.mtimeMs}`
+        };
+        if (!found || stats.mtimeMs > Math.max(found.modifiedMs || 0, 0)) {
+          found = candidate;
+        }
+      }
+    }
+    return found || { exists: false };
+  } catch (e) {
+    console.error('Erreur détection staging remplacement:', e);
+    return { exists: false };
+  }
+}
+
+/**
+ * 🗂️ État complet du mode remplacement (utilisé par /api/control-tower/status et replacement-state)
+ */
+export function getReplacementState() {
+  const meta = readPendingMeta();
+  const staging = detectReplacementStaging();
+  const catalog = getCurrentCatalog();
+  const mode = meta ? meta.mode : null;
+  return {
+    success: true,
+    hasStaging: staging.exists,
+    staging,
+    pendingMode: mode,
+    pendingProductRank: meta && meta.productRank ? Number(meta.productRank) : null,
+    pendingOriginalName: meta ? (meta.originalName || null) : null,
+    totalCatalogProducts: catalog.length
+  };
+}
+
+/**
+ * 🗂️ Vide le staging de remplacement + les méta-données (Annuler / après Déploiement).
+ */
+export function clearReplacementStaging() {
+  try {
+    if (fs.existsSync(STAGING_DIR)) {
+      for (const name of fs.readdirSync(STAGING_DIR)) {
+        const fp = path.join(STAGING_DIR, name);
+        try {
+          if (fs.statSync(fp).isFile()) fs.unlinkSync(fp);
+        } catch (e) { /* fichier déjà absent */ }
+      }
+    }
+  } catch (e) {
+    console.error('Erreur purge du staging:', e);
+  }
+  clearPendingMeta();
 }
 
 /**
@@ -192,10 +336,18 @@ export function getCurrentCatalog() {
  * Déduit fidèlement les 13 attributs métier d'après l'image réelle déposée.
  * 🛑 Garde-fous :
  * - Timeout 3 minutes par requête (AbortController)
- * - 3 tentatives avec pause de 15 secondes
+* - 3 tentatives avec pause de 15 secondes
  * - Si échec total : interruption propre et explicite (jamais de copier-coller)
  */
 export async function analyzeMockupWithAI(imagePath) {
+  // 🔌 Crochet de TEST déterministe (hors production) : si CONTROL_TOWER_FAKE_AI contient
+  // un JSON valide, il est renvoyé tel quel SANS appel réseau (tests a→g reproductibles).
+  if (process.env.CONTROL_TOWER_FAKE_AI) {
+    try {
+      const fake = JSON.parse(process.env.CONTROL_TOWER_FAKE_AI);
+      if (fake && typeof fake === 'object') return JSON.parse(JSON.stringify(fake));
+    } catch (e) { /* JSON invalide : on ignore et on poursuit vers la vraie IA */ }
+  }
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error(
@@ -739,8 +891,11 @@ export function appendToJournal(entry) {
   history.unshift(entry);
   fs.writeFileSync(JOURNAL_JSON, JSON.stringify(history, null, 2), 'utf-8');
 
-  const txtLine = `[${entry.date}] NOUVEAU TABLEAU N°1 : « ${entry.nouveauNom} » (Ancien n°1 : « ${entry.ancienNom} ») | Sauvegarde : ${entry.backupFolder} | Statut : ${entry.statut}\n` +
-    `  ↳ Détails : Catégorie: ${entry.champs.categorie} | Style: ${entry.champs.style} | Pièce: ${entry.champs.environnement} | Matériau: ${entry.champs.materiauRecommande} | Finition: ${entry.champs.montageRecommande} | Couleurs: ${JSON.stringify(entry.champs.couleurs)}\n\n`;
+  const txtLine = entry.type === 'REMPLACEMENT'
+    ? `[${entry.date}] REMPLACEMENT ${entry.produit || 'produit-N'} : « ${entry.ancienNom} » → « ${entry.nouveauNom} » | Prix saisi : ${entry.prix} | Sauvegarde : ${entry.backupFolder} | Statut : ${entry.statut}\n` +
+      `  ↳ Détails : Catégorie: ${entry.champs.categorie} | Style: ${entry.champs.style} | Pièce: ${entry.champs.environnement} | Matériau: ${entry.champs.materiauRecommande} | Finition: ${entry.champs.montageRecommande} | Couleurs: ${JSON.stringify(entry.champs.couleurs)}\n\n`
+    : `[${entry.date}] NOUVEAU TABLEAU N°1 : « ${entry.nouveauNom} » (Ancien n°1 : « ${entry.ancienNom} ») | Sauvegarde : ${entry.backupFolder} | Statut : ${entry.statut}\n` +
+      `  ↳ Détails : Catégorie: ${entry.champs.categorie} | Style: ${entry.champs.style} | Pièce: ${entry.champs.environnement} | Matériau: ${entry.champs.materiauRecommande} | Finition: ${entry.champs.montageRecommande} | Couleurs: ${JSON.stringify(entry.champs.couleurs)}\n\n`;
 
   try {
     fs.appendFileSync(JOURNAL_TXT, txtLine, 'utf-8');
@@ -853,6 +1008,7 @@ export async function executeAutoIntegration() {
   } catch (e) {
     console.warn('Nettoyage maquette temporaire:', e.message);
   }
+  clearPendingMeta();
 
   // 7. Enregistrement dans le journal
   const now = new Date();
@@ -880,4 +1036,320 @@ export async function executeAutoIntegration() {
     pythonOutput: pyResult.stdout,
     messageClair: `Le tableau « ${champs.nom} » (Catégorie : ${champs.categorie}, Matériau : ${champs.materiauRecommande}) est désormais n°1 du catalogue ! Le moteur Python a décalé les anciens tableaux sans aucune perte.`
   };
+}
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔁 PIPELINE COMPLET — MODE REMPLACEMENT AUTOMATIQUE (SANS DÉCALAGE)
+// ═══════════════════════════════════════════════════════════════════════════
+// 1. Drop droit → staging images/_staging/produit-N.<ext> (image vivante JAMAIS touchée)
+// 2. « Lancer remplacer_produit_auto » → prepareReplacement() → aperçu + fiche pré-remplie
+// 3. « Régénérer la fiche produit » → regenerateFiche() → IA vision (prix préservé)
+// 4. « Déployer » → executeReplacement() → backup horodaté + copie image + réécriture
+//    fiche N (ZÉRO décalage) + journal + commit/push site-web + purge staging
+// 5. « Annuler » → clearReplacementStaging() → ZÉRO écriture durable
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 👁️ Aperçu de remplacement (préparation du panneau côté UI).
+ * Analyse IA vision de l'image staging (réutilise analyzeMockupWithAI),
+ * prix pré-rempli = ANCIEN prix du rang N (modifiable côté UI).
+ */
+export async function prepareReplacement() {
+  const meta = readPendingMeta();
+  if (!meta || meta.mode !== 'replace' || !meta.productRank) {
+    throw new Error('Aucune maquette de remplacement en attente. Déposez un fichier nommé produit-N.ext.');
+  }
+  const staging = detectReplacementStaging();
+  if (!staging.exists || !fs.existsSync(staging.fullPath)) {
+    throw new Error('Aucune maquette de remplacement détectée dans site-web/images/_staging/.');
+  }
+  const catalog = getCurrentCatalog();
+  const rank = Number(meta.productRank);
+  if (!Number.isInteger(rank) || rank < 1 || rank > catalog.length) {
+    throw new Error(`produit-${rank} introuvable (catalogue : 1..${catalog.length}) — dépôt annulé`);
+  }
+
+  let champs = meta.aiChamps;
+  if (!champs) {
+    champs = await analyzeMockupWithAI(staging.fullPath);
+    meta.aiChamps = champs;
+    writePendingMeta(meta);
+  }
+
+  const oldProduct = catalog[rank - 1];
+  return {
+    success: true,
+    mode: 'replace',
+    productRank: rank,
+    originalName: meta.originalName || staging.filename,
+    currentImageUrl: oldProduct.image || `images/produit-${rank}.jpg`,
+    droppedImageUrl: staging.url,
+    oldPrix: oldProduct.prix || 'À partir de 180 MAD',
+    oldProduct,
+    newChamps: JSON.parse(JSON.stringify(champs))
+  };
+}
+
+/**
+ * ♻️ Régénère la fiche produit via IA vision : TOUS les champs sont réécrits
+ * SAUF le prix saisi (prixCourant) qui est préservé tel quel.
+ */
+export async function regenerateFiche(prixCourant) {
+  const meta = readPendingMeta();
+  if (!meta || meta.mode !== 'replace' || !meta.productRank) {
+    throw new Error('Aucune maquette de remplacement en attente. Déposez un fichier nommé produit-N.ext.');
+  }
+  const staging = detectReplacementStaging();
+  if (!staging.exists || !fs.existsSync(staging.fullPath)) {
+    throw new Error('Aucune maquette de remplacement en staging.');
+  }
+  const champs = await analyzeMockupWithAI(staging.fullPath);
+  if (typeof prixCourant === 'string' && prixCourant.trim()) {
+    champs.prix = prixCourant.trim();
+  }
+  meta.aiChamps = champs;
+  writePendingMeta(meta);
+  return {
+    success: true,
+    productRank: Number(meta.productRank),
+    newChamps: JSON.parse(JSON.stringify(champs)),
+    prixPreserve: champs.prix
+  };
+}
+
+/**
+ * 🗂️ Sauvegarde horodatée de sécurité dédiée au remplacement :
+ * contenu.js + ancienne image du rang N + image de remplacement en staging.
+ */
+export function createReplacementBackup(productRank) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}h${pad(now.getMinutes())}m${pad(now.getSeconds())}s`;
+  const backupFolder = path.join(BACKUPS_DIR, `backup_${timestamp}_replacement_p${productRank}`);
+  fs.mkdirSync(backupFolder, { recursive: true });
+
+  const filesToCheck = ['contenu.js', 'site-config.js', 'index.html', 'materials.html', 'process.html', 'privacy.html'];
+  for (const f of filesToCheck) {
+    const src = path.join(SITE_DIR, f);
+    if (fs.existsSync(src)) {
+      try { fs.copyFileSync(src, path.join(backupFolder, f)); } catch (e) { /* copie best-effort */ }
+    }
+  }
+
+  const catalog = getCurrentCatalog();
+  const oldProduct = catalog[productRank - 1] || {};
+  const oldImgName = path.basename(oldProduct.image || '');
+  if (oldImgName) {
+    const oldImgFull = path.join(IMAGES_DIR, oldImgName);
+    if (fs.existsSync(oldImgFull)) {
+      try { fs.copyFileSync(oldImgFull, path.join(backupFolder, `images_${oldImgName}`)); } catch (e) { console.warn('Snapshot image remplacement:', e.message); }
+    }
+  }
+
+  const staging = detectReplacementStaging();
+  if (staging.exists && fs.existsSync(staging.fullPath)) {
+    try { fs.copyFileSync(staging.fullPath, path.join(backupFolder, `images_staging_${staging.filename}`)); } catch (e) { /* best effort */ }
+  }
+
+  return { backupFolder, relativeFolder: path.basename(backupFolder), timestamp, productRank };
+}
+
+/**
+ * ✍️ Réécriture de la fiche N dans contenu.js (préservation BOM + CRLF),
+ * AUCUN décalage : les autres fiches restent littéralement inchangées.
+ */
+export function rewriteProductAtRank(productRank, champs, newImageRel) {
+  const catalog = getCurrentCatalog();
+  if (!Number.isInteger(productRank) || productRank < 1 || productRank > catalog.length) {
+    throw new Error(`produit-${productRank} introuvable (catalogue : 1..${catalog.length}) — dépôt annulé`);
+  }
+  const oldProduct = catalog[productRank - 1] || {};
+  if (!fs.existsSync(CONTENU_JS)) throw new Error(`contenu.js introuvable : ${CONTENU_JS}`);
+
+  const raw = fs.readFileSync(CONTENU_JS, 'utf-8');
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  const hasBom = raw.startsWith('\uFEFF');
+  const bodyStart = hasBom ? raw.slice(1) : raw;
+
+  const arrayMatch = bodyStart.match(/(produits\s*:\s*\[)/);
+  if (!arrayMatch) throw new Error("Tableau `produits: [` introuvable dans contenu.js — abandon du remplacement.");
+  const arrayStart = arrayMatch.index + arrayMatch[0].length;
+  const blockArea = bodyStart.slice(arrayStart);
+  const objectRegex = /\{([\s\S]*?)\}(?=,|\s*\]|$)/g;
+  const objects = [];
+  let m;
+  while ((m = objectRegex.exec(blockArea)) !== null) {
+    objects.push({ start: arrayStart + m.index, end: arrayStart + m.index + m[0].length });
+  }
+  if (productRank < 1 || productRank > objects.length) {
+    throw new Error(`produit-${productRank} introuvable dans le catalogue (1..${objects.length}) — dépôt annulé`);
+  }
+  const target = objects[productRank - 1];
+
+  const clean = (val) => String(val ?? '').replace(/"/g, '\\"').replace(/\r?\n/g, ' ').trim();
+  const couleurs = Array.isArray(champs.couleurs)
+    ? `[${champs.couleurs.map((c) => `"${clean(c)}"`).join(', ')}]`
+    : `["${clean(champs.couleurs)}"]`;
+  const badge = champs.badge ? `"${clean(champs.badge)}"` : 'null';
+
+  const fields = [
+    `nom: "${clean(champs.nom)}"`,
+    `description: "${clean(champs.description)}"`,
+    `categorie: "${clean(champs.categorie)}"`,
+    `style: "${clean(champs.style)}"`,
+    `environnement: "${clean(champs.environnement)}"`,
+    `image: "${newImageRel || (oldProduct.image || `images/produit-${productRank}.jpg`)}"`,
+    `imageFallback: "${clean(champs.imageFallback || oldProduct.imageFallback || '🎨')}"`,
+    `prix: "${clean(champs.prix)}"`,
+    `badge: ${badge}`,
+    `materiauRecommande: "${clean(champs.materiauRecommande)}"`,
+    `montageRecommande: "${clean(champs.montageRecommande)}"`,
+    `couleurs: ${couleurs}`,
+    `ambiance: "${clean(champs.ambiance)}"`
+  ];
+
+  const newBlock = `{${eol}${fields.map((f) => `      ${f},`).join(eol)}${eol}    }`;
+  const newContent = bodyStart.slice(0, target.start) + newBlock + bodyStart.slice(target.end);
+  fs.writeFileSync(CONTENU_JS, (hasBom ? '\uFEFF' : '') + newContent, 'utf-8');
+
+  return { code: 0, productRank, newImageRel, oldImageRel: oldProduct.image || '' };
+}
+/**
+ * 🚀 EXÉCUTION COMPLÈTE DU MODE REMPLACEMENT (« Déployer ») :
+ * sauvegarde horodatée → copie staging → images/produit-N.<ext> → réécriture fiche N
+ * (ZÉRO décalage, badge « Nouveau ») → journal « REMPLACEMENT produit-N » → staging vidé
+ * → commit + push site-web (fichiers ciblés).
+ */
+export async function executeReplacement(productRank, prixSaisi, uiChamps) {
+  const meta = readPendingMeta();
+  if (!meta || meta.mode !== 'replace' || !meta.productRank) {
+    throw new Error('Aucune maquette de remplacement en attente. Déposez un fichier nommé produit-N.ext.');
+  }
+  const catalog = getCurrentCatalog();
+  const rank = Number(productRank);
+  if (!Number.isInteger(rank) || rank < 1 || rank > catalog.length) {
+    throw new Error(`produit-${rank} introuvable (catalogue : 1..${catalog.length}) — dépôt annulé`);
+  }
+  const staging = detectReplacementStaging();
+  if (!staging.exists || !fs.existsSync(staging.fullPath)) {
+    throw new Error('Aucune maquette de remplacement détectée dans site-web/images/_staging/.');
+  }
+  const oldProduct = catalog[rank - 1] || {};
+
+  // 1. Fiche : champs UI si fournis, sinon analyse IA cachée, sinon IA vision à la volée
+  let champs = null;
+  if (uiChamps && typeof uiChamps === 'object' && (uiChamps.nom || uiChamps.description)) {
+    champs = JSON.parse(JSON.stringify(uiChamps));
+  }
+  if (!champs && meta.aiChamps) champs = JSON.parse(JSON.stringify(meta.aiChamps));
+  if (!champs) champs = await analyzeMockupWithAI(staging.fullPath);
+
+  champs.prix = (typeof prixSaisi === 'string' && prixSaisi.trim())
+    ? prixSaisi.trim()
+    : (oldProduct.prix || champs.prix || 'À partir de 180 MAD');
+  champs.badge = 'Nouveau';
+
+  // 2. Sauvegarde horodatée (ancienne image + contenu.js + staging) AVANT toute modification
+  const backupResult = createReplacementBackup(rank);
+
+  // 3. Copie staging → image vivante images/produit-N.<ext>
+  const newExt = staging.ext || path.extname(oldProduct.image || '') || '.jpg';
+  const newName = `produit-${rank}${newExt}`;
+  const newImageRel = `images/${newName}`;
+  const targetFull = path.join(IMAGES_DIR, newName);
+  const oldImgName = path.basename(oldProduct.image || '');
+  const oldImgFull = oldImgName ? path.join(IMAGES_DIR, oldImgName) : null;
+
+  if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  fs.copyFileSync(staging.fullPath, targetFull);
+
+  // 4. Si l'extension change : suppression de l'ancienne image (même rang, pas de doublon)
+  if (oldImgName && oldImgName !== newName && oldImgFull && fs.existsSync(oldImgFull)) {
+    try { fs.unlinkSync(oldImgFull); } catch (e) { console.warn('Nettoyage ancienne image:', e.message); }
+  }
+
+  // 5. Réécriture de la fiche N dans contenu.js (BOM + CRLF préservés, AUCUN décalage)
+  rewriteProductAtRank(rank, champs, newImageRel);
+
+  // 6. Purge du staging + méta-données (l'image déployée est désormais l'image vivante)
+  clearReplacementStaging();
+
+  // 7. Journal des Intégrations : « REMPLACEMENT produit-N »
+  const now = new Date();
+  appendToJournal({
+    type: 'REMPLACEMENT',
+    id: `rep_${Date.now()}`,
+    date: now.toLocaleString('fr-FR'),
+    isoDate: now.toISOString(),
+    produit: `produit-${rank}`,
+    productRank: rank,
+    nouveauNom: champs.nom,
+    ancienNom: oldProduct.nom || '(sans nom)',
+    ancienPrix: oldProduct.prix || '',
+    prix: champs.prix,
+    backupFolder: backupResult.relativeFolder,
+    champs,
+    statut: 'Remplacement Réussi via Groq Vision'
+  });
+
+  // 8. Commit + push site-web (fichiers ciblés uniquement)
+  const commitResult = commitAndPushSite(
+    `chore: remplacement automatique produit-${rank} : « ${oldProduct.nom || 'œuvre'} » → « ${champs.nom} »`,
+    [CONTENU_JS, targetFull]
+  );
+
+  return {
+    success: true,
+    type: 'REMPLACEMENT',
+    productRank: rank,
+    produit: `produit-${rank}`,
+    ancienNom: oldProduct.nom || '(sans nom)',
+    nouveauNom: champs.nom,
+    prix: champs.prix,
+    targetImageRel: newImageRel,
+    backupFolder: backupResult.relativeFolder,
+    backupName: backupResult.timestamp,
+    commit: commitResult,
+    messageClair: `L'œuvre n°${rank} « ${oldProduct.nom || 'sans nom'} » a été remplacée par « ${champs.nom} » (prix : ${champs.prix}). Aucun décalage : les autres fiches restent inchangées. Sauvegarde : ${backupResult.relativeFolder}.`
+  };
+}
+
+/**
+ * 🔄 Commit + push Git des fichiers ciblés dans le dépôt site-web.
+ * Uniquement les fichiers du site sont ajoutés : les modifications de
+ * développement en cours (moteur, serveur, UI) ne font PAS partie de ce commit.
+ */
+export function commitAndPushSite(message, files) {
+  const results = { commit: null, push: null };
+  const cwd = SITE_DIR;
+  try {
+    const rel = (files || []).map((f) => {
+      const full = path.resolve(String(f));
+      const base = path.resolve(cwd);
+      if (!full.startsWith(base + path.sep)) {
+        throw new Error(`Fichier hors du dépôt site-web : ${full}`);
+      }
+      return full.slice(base.length + 1).replace(/\\/g, '/');
+    });
+    spawnSync('git', ['add', '--', ...rel], { cwd });
+    const commit = spawnSync('git', ['commit', '-m', message], { cwd });
+    results.commit = {
+      status: commit && commit.status,
+      stdout: String(commit && commit.stdout || '').trim(),
+      stderr: String(commit && commit.stderr || '').trim()
+    };
+  } catch (e) {
+    results.commit = { error: e.message };
+    return results;
+  }
+  try {
+    const push = spawnSync('git', ['push'], { cwd });
+    results.push = {
+      status: push && push.status,
+      stdout: String(push && push.stdout || '').trim(),
+      stderr: String(push && push.stderr || '').trim()
+    };
+  } catch (e) {
+    results.push = { error: e.message };
+  }
+  return results;
 }
