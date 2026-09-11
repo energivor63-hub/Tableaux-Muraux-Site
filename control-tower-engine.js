@@ -66,7 +66,9 @@ export const ALLOWED_MONTAGES = ["Cadre Américain", "Châssis Bois"];
 
 // ⚙️ Paramètres Groq Vision
 export const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-export const GROQ_VISION_MODEL = 'qwen/qwen3.6-27b';
+// 🧠 Modèle vision Groq surchargeable depuis le .env (GROQ_VISION_MODEL=...) :
+// bascule de modèle SANS toucher au code (défaut : qwen/qwen3.6-27b).
+export const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
 export const GROQ_TIMEOUT_MS = 180000; // Timeout 3 minutes par tentative
 export const GROQ_MAX_RETRIES = 3;      // 3 tentatives normales maximum
 // 🛑 Garde-fou OTPM Groq (tier gratuit : limite 1000 OUTPUT tokens/minute) :
@@ -78,6 +80,12 @@ export const GROQ_RATE_LIMIT_RETRIES = 2;  // 2 tentatives supplémentaires déd
 export const GROQ_RATE_LIMIT_DELAY_MS = Number(process.env.GROQ_RATE_LIMIT_DELAY_MS) || 65000; // fenêtre OTPM ≈ 1 min
 export const GROQ_RATE_LIMIT_TOAST = 'quota Groq : nouvelle tentative dans ~1 min'; // message toast clair
 export const GROQ_RETRY_DELAY_MS = Number(process.env.GROQ_RETRY_DELAY_MS) || 15000; // Pause de 15s entre essais normaux
+// 🧠 Mode thinking des modèles qwen : le raisonnement interne consomme le budget
+// max_tokens → génération vide → 400 json_validate_failed (failed_generation:"").
+// La directive « /no_think » est ajoutée EN FIN du prompt utilisateur (qwen only).
+export const GROQ_NO_THINK = '\n/no_think';
+export const GROQ_JSON_RETRIES_MAX = 1; // UN seul retry IMMÉDIAT pour 400 json_validate_failed (pas 3×15 s : chaque tentative consomme l'OTPM)
+export const GROQ_COMPACT_REMINDER = '\nRAPPEL DE COMPACITÉ (après échec de validation JSON) : réponds UNIQUEMENT avec l\'objet JSON compact du schéma ci-dessus (clés courtes nom/desc/cat/style/env/coul/amb/mat/mont/fallback), "desc" en 2 phrases maximum, "coul" en 3 à 4 teintes, AUCUN texte hors du JSON.';
 
 /**
  * Récupère la clé API configurée (GROQ_API_KEY prioritaire)
@@ -339,6 +347,61 @@ export function getCurrentCatalog() {
 }
 
 /**
+ * 🔧 Réparation JSON défensive : si la réponse 200 arrive tronquée (budget
+ * max_tokens atteint en pleine génération), referme guillemets, accolades et
+ * crochets manquants (gère chaîne interrompue, virgule pendante, clé sans
+ * valeur) pour récupérer les champs déjà écrits avant parseVisionChamps —
+ * les champs absents reprennent leurs défauts moteur. Best-effort : si le
+ * résultat reste invalide, l'erreur de parse d'origine est relancée.
+ */
+export function repairTruncatedJson(raw) {
+  if (typeof raw !== 'string' || raw.length === 0) return raw;
+  const trimmed = raw.trim();
+  if (trimmed[0] !== '{' && trimmed[0] !== '[') return trimmed;
+
+  // Déjà valide ? Rien à réparer.
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch (e) { /* réponse tronquée : on répare ci-dessous */ }
+
+  // Repérage des structures ouvertes (hors chaînes) et de l'état de chaîne final
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+  for (const ch of trimmed) {
+    if (inString) {
+      if (escaped) { escaped = false; }
+      else if (ch === '\\') { escaped = true; }
+      else if (ch === '"') { inString = false; }
+      continue;
+    }
+    if (ch === '"') { inString = true; }
+    else if (ch === '{' || ch === '[') { stack.push(ch); }
+    else if (ch === '}' || ch === ']') { stack.pop(); }
+  }
+
+  let repaired = trimmed;
+  // Chaîne interrompue en plein milieu (ou anti-slash d'échappement pendant) → ferme le guillemet
+  if (escaped) repaired += '\\';
+  if (inString || escaped) repaired += '"';
+  // Fin de chaîne ambiguë : valeur null pour une clé pendante, sinon virgule pendante supprimée,
+  // sinon clé complète sans valeur retirée (OBJET uniquement — une valeur pendante
+  // d'un tableau doit être CONSERVÉE) — puis fermeture des structures dans l'ordre inverse.
+  if (/:\s*$/.test(repaired)) {
+    repaired += ' null';
+  } else if (/,\s*$/.test(repaired)) {
+    repaired = repaired.replace(/,\s*$/, '');
+  } else if (stack[stack.length - 1] === '{' && /,\s*"(?:[^"\\]|\\.)*"$/.test(repaired)) {
+    repaired = repaired.replace(/,\s*"(?:[^"\\]|\\.)*"$/, '');
+  }
+  while (stack.length) {
+    repaired += stack.pop() === '{' ? '}' : ']';
+  }
+  return repaired;
+}
+
+/**
  * 🧩 Normalise la réponse JSON de l'IA vision vers la fiche 13 champs métier.
  * Le schéma COMPACT à clés courtes (nom, desc, cat, style, env, coul[], amb,
  * mat, mont, fallback) réduit de moitié la taille de sortie pour rester sous
@@ -405,6 +468,9 @@ export function parseVisionChamps(parsed) {
  * - Timeout 3 minutes par requête (AbortController)
  * - max_tokens plafonné à 950 (tier gratuit Groq : limite OTPM 1000/min)
  * - Schéma JSON compact à clés courtes (≈ 700 tokens réels de sortie)
+ * - Modèle qwen : directive « /no_think » en FIN de prompt (sinon le mode
+ *   thinking vide le budget max_tokens → réponse vide → 400 json_validate_failed)
+ * - 400 json_validate_failed : UN seul retry IMMÉDIAT avec rappel de compacité
  * - 3 tentatives normales avec pause de 15 secondes
  * - 429 OTPM : 2 tentatives supplémentaires espacées de 65 s (fenêtre OTPM)
  * - Si échec total : interruption propre et explicite (jamais de copier-coller),
@@ -512,11 +578,16 @@ CONTRAINTES DE COMPACITÉ (non négociables — plafond de tokens de sortie) :
   }
 
   // Si Groq Vision est demandé ou en fallback
-  // 🔁 Boucle à deux budgets : 3 essais normaux (pause 15 s) + 2 essais
-  // supplémentaires dédiés au 429 OTPM (pause 65 s = fenêtre OTPM Groq).
+  // 🔁 Boucle à trois budgets : 3 essais normaux (pause 15 s), UN retry JSON
+  // immédiat (400 json_validate_failed) et 2 retries 429 OTPM (pause 65 s).
   let lastWasRateLimit = false;
   let rateLimitRetriesUsed = 0;
   let totalAttempts = 0;
+  // 🧠 Directive anti-thinking : uniquement si le modèle Groq commence par
+  // « qwen » (le mode thinking consomme le budget max_tokens → réponse vide).
+  const isQwenModel = String(GROQ_VISION_MODEL).trim().toLowerCase().startsWith('qwen');
+  let jsonValidateRetriesUsed = 0;
+  let compactReminder = false;
 
   for (let attempt = 1; attempt <= GROQ_MAX_RETRIES; attempt++) {
     console.log(`[Groq Vision] Tentative ${attempt}/${GROQ_MAX_RETRIES} d'analyse visuelle via ${GROQ_VISION_MODEL}...`);
@@ -538,7 +609,12 @@ CONTRAINTES DE COMPACITÉ (non négociables — plafond de tokens de sortie) :
             content: [
               {
                 type: 'text',
+                // 🧠 /no_think TOUJOURS EN FIN de prompt utilisateur (modèles
+                // qwen) ; après un 400 json_validate_failed, le rappel de
+                // compacité précède la directive.
                 text: systemPrompt
+                  + (compactReminder ? GROQ_COMPACT_REMINDER : '')
+                  + (isQwenModel ? GROQ_NO_THINK : '')
               },
               {
                 type: 'image_url',
@@ -570,6 +646,9 @@ CONTRAINTES DE COMPACITÉ (non négociables — plafond de tokens de sortie) :
         const errBody = await response.text();
         const apiError = new Error(`Erreur API Groq (${response.status} ${response.statusText}): ${errBody}`);
         if (response.status === 429) apiError.isGroqRateLimit = true; // 429 OTPM → retry spécial 65 s
+        if (response.status === 400 && /json_validate_failed|failed_generation/i.test(errBody)) {
+          apiError.isGroqJsonValidate = true; // 400 json_validate_failed → UN seul retry immédiat
+        }
         throw apiError;
       }
 
@@ -577,11 +656,24 @@ CONTRAINTES DE COMPACITÉ (non négociables — plafond de tokens de sortie) :
       const rawContent = jsonResponse.choices?.[0]?.message?.content?.trim() || '';
 
       if (!rawContent) {
-        throw new Error("L'API Groq Vision n'a retourné aucun contenu pour cette image.");
+        // Réponse vide : p.ex. mode thinking ayant épuisé le budget max_tokens
+        // (même politique que le 400 json_validate_failed → UN seul retry immédiat).
+        const emptyError = new Error("L'API Groq Vision n'a retourné aucun contenu pour cette image.");
+        emptyError.isGroqJsonValidate = true;
+        throw emptyError;
       }
 
       const cleanJson = rawContent.replace(/^```json/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
-      const result = parseVisionChamps(JSON.parse(cleanJson));
+
+      // 🔧 Réparation défensive d'un JSON tronqué (budget max_tokens atteint en
+      // pleine génération) : fermeture des guillemets/accolades/crochets manquants.
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        parsed = JSON.parse(repairTruncatedJson(cleanJson));
+      }
+      const result = parseVisionChamps(parsed);
 
       console.log(`[Groq Vision] ✅ Analyse réussie pour « ${result.nom} » (Catégorie : ${result.categorie})`);
       return result;
@@ -594,6 +686,23 @@ CONTRAINTES DE COMPACITÉ (non négociables — plafond de tokens de sortie) :
         /rate_?limit/i.test(err.message || '');
       const errMsg = isAbort ? 'Délai d\'attente dépassé (Timeout 3 min)' : err.message;
       console.warn(`[Groq Vision] ⚠️ Échec tentative ${attempt}/${GROQ_MAX_RETRIES} : ${errMsg}`);
+
+      // 🆕 400 json_validate_failed (failed_generation:"" : le mode thinking a vidé
+      // le budget max_tokens → réponse vide) → UN seul retry IMMÉDIAT avec rappel
+      // de compacité. Pas de pause 15 s : chaque tentative consomme l'OTPM.
+      const isJsonValidate = err.isGroqJsonValidate === true ||
+        /json_validate_failed|failed_generation/i.test(err.message || '');
+      if (isJsonValidate) {
+        if (jsonValidateRetriesUsed < GROQ_JSON_RETRIES_MAX) {
+          jsonValidateRetriesUsed++;
+          attempt--;
+          compactReminder = true;
+          console.warn(`[Groq Vision] 🔁 400 json_validate_failed (réponse vide/tronquée) — retry immédiat ${jsonValidateRetriesUsed}/${GROQ_JSON_RETRIES_MAX} avec rappel de compacité...`);
+          continue;
+        }
+        // Budget de retries JSON épuisé → abort propre (toast existant).
+        break;
+      }
 
       // 🔁 Retry SPÉCIAL 429 OTPM : jusqu'à 2 tentatives supplémentaires espacées
       // de 65 s (fenêtre OTPM Groq). Elles ne consomment PAS le budget des 3 essais
