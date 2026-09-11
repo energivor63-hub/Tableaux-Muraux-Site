@@ -1,4 +1,5 @@
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -1165,6 +1166,12 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
   const oldProduct = catalog[productRank - 1] || {};
   if (!fs.existsSync(CONTENU_JS)) throw new Error(`contenu.js introuvable : ${CONTENU_JS}`);
 
+  // 🛡️ Garde-fou atomique : ne JAMAIS écrire contenu.js si l'image cible du remplacement
+  // est absente du disque (sinon fiche publiée avec une image 404 sur le site déployé).
+  if (newImageRel && !fs.existsSync(path.resolve(SITE_DIR, newImageRel))) {
+    throw new Error(`copie d'image échouée : l'image cible « ${newImageRel} » est introuvable sur le disque — contenu.js LAISSÉ INTACT, staging conservé.`);
+  }
+
   const raw = fs.readFileSync(CONTENU_JS, 'utf-8');
   const eol = raw.includes('\r\n') ? '\r\n' : '\n';
   const hasBom = raw.startsWith('\uFEFF');
@@ -1214,10 +1221,42 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
   return { code: 0, productRank, newImageRel, oldImageRel: oldProduct.image || '' };
 }
 /**
- * 🚀 EXÉCUTION COMPLÈTE DU MODE REMPLACEMENT (« Déployer ») :
- * sauvegarde horodatée → copie staging → images/produit-N.<ext> → réécriture fiche N
- * (ZÉRO décalage, badge « Nouveau ») → journal « REMPLACEMENT produit-N » → staging vidé
- * → commit + push site-web (fichiers ciblés).
+ * 🔐 SHA256 d'un fichier (lecture synchrone par blocs). Source de vérité de la
+ * vérification atomique du déploiement : la maquette staging et le fichier vivant
+ * doivent être identiques octet-pour-octet avant toute écriture de contenu.js.
+ */
+export function sha256File(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`fichier introuvable : ${filePath}`);
+  }
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile() || stat.size <= 0) {
+    throw new Error(`fichier vide ou invalide : ${filePath}`);
+  }
+  const hash = crypto.createHash('sha256');
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const size = stat.size;
+    const buf = Buffer.alloc(Math.min(1024 * 1024, size));
+    let pos = 0;
+    while (pos < size) {
+      const read = fs.readSync(fd, buf, 0, buf.length, pos);
+      if (read <= 0) break;
+      hash.update(read === buf.length ? buf : buf.subarray(0, read));
+      pos += read;
+    }
+    return hash.digest('hex');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+/**
+ * 🚀 EXÉCUTION COMPLÈTE DU MODE REMPLACEMENT (« Déployer ») — ATOMIQUE et VÉRIFIÉ :
+ * sauvegarde horodatée → copie staging → images/produit-N.<ext> avec vérification SHA256
+ * immédiate (maquette identique à l'existante ou copie corrompue ⇒ ABORT complet :
+ * contenu.js intact, staging conservé) → suppression éventuelle de l'ancienne extension
+ * APRÈS vérification → réécriture fiche N (ZÉRO décalage, badge « Nouveau ») → journal
+ * « REMPLACEMENT produit-N » (avec SHA256) → staging vidé → commit + push site-web.
  */
 export async function executeReplacement(productRank, prixSaisi, uiChamps) {
   const meta = readPendingMeta();
@@ -1251,7 +1290,7 @@ export async function executeReplacement(productRank, prixSaisi, uiChamps) {
   // 2. Sauvegarde horodatée (ancienne image + contenu.js + staging) AVANT toute modification
   const backupResult = createReplacementBackup(rank);
 
-  // 3. Copie staging → image vivante images/produit-N.<ext>
+  // 3. Copie staging → image vivante images/produit-N.<ext> — ATOMIQUE et VÉRIFIÉE (SHA256)
   const newExt = staging.ext || path.extname(oldProduct.image || '') || '.jpg';
   const newName = `produit-${rank}${newExt}`;
   const newImageRel = `images/${newName}`;
@@ -1260,11 +1299,63 @@ export async function executeReplacement(productRank, prixSaisi, uiChamps) {
   const oldImgFull = oldImgName ? path.join(IMAGES_DIR, oldImgName) : null;
 
   if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  fs.copyFileSync(staging.fullPath, targetFull);
 
-  // 4. Si l'extension change : suppression de l'ancienne image (même rang, pas de doublon)
+  // 3a. Hash SHA256 de la maquette staging (source de vérité du déploiement)
+  let stagingHash;
+  try {
+    stagingHash = sha256File(staging.fullPath);
+  } catch (e) {
+    throw new Error(`copie d'image échouée : maquette staging « ${staging.filename} » illisible (${e.message}) — ABORT complet : contenu.js inchangé, staging conservé.`);
+  }
+
+  // 3b. 🛡️ Garde-fou anti-régression (run 3d84f72 du 10/09/2026) : refuser une maquette
+  //     staging identique à l'image vivante qu'elle remplace. Sinon la copie « réussit »
+  //     sans rien changer, git ne stage aucune image, et le commit publie la nouvelle
+  //     fiche produit avec l'ANCIENNE image (fiche/image désynchronisés).
+  if (oldImgFull && fs.existsSync(oldImgFull) && sha256File(oldImgFull) === stagingHash) {
+    throw new Error(
+      `image déposée identique à l'existante — remplacement annulé : la maquette staging « ${staging.filename} » ` +
+      `possède le même SHA256 (${stagingHash.slice(0, 16)}…) que l'image vivante « ${oldImgName} » du produit-${rank}. ` +
+      `ABORT complet : aucune écriture de contenu.js, staging conservé. ` +
+      `Déposez la VRAIE nouvelle image dans site-web/images/_staging/ puis relancez « Déployer ».`
+    );
+  }
+
+  // 3c. Copie vers un fichier temporaire → vérification SHA256 du temporaire → renommage
+  //     atomique (même volume) → vérification IMMÉDIATE du fichier vivant : images/produit-N.<ext>
+  //     doit être octet-pour-octet la maquette staging, sinon ABORT complet.
+  const tmpFull = `${targetFull}.deploy-tmp`;
+  try {
+    fs.copyFileSync(staging.fullPath, tmpFull);
+    const tmpHash = sha256File(tmpFull);
+    if (tmpHash !== stagingHash) {
+      throw new Error(`SHA256 du fichier temporaire ${path.basename(tmpFull)} (${tmpHash.slice(0, 16)}…) ≠ maquette staging (${stagingHash.slice(0, 16)}…).`);
+    }
+    fs.renameSync(tmpFull, targetFull); // renommage atomique : jamais d'image vivante partielle
+    const liveHash = sha256File(targetFull);
+    if (liveHash !== stagingHash) {
+      throw new Error(`SHA256 de l'image vivante ${newImageRel} (${liveHash.slice(0, 16)}…) ≠ maquette staging (${stagingHash.slice(0, 16)}…).`);
+    }
+  } catch (deployErr) {
+    // ABORT complet : aucune écriture contenu.js, staging conservé, image vivante restaurée si altérée
+    try { fs.rmSync(tmpFull, { force: true, recursive: true, maxRetries: 2 }); } catch (e2) { /* nettoyage best-effort */ }
+    const oldSnapshot = (oldImgFull && path.basename(oldImgFull) === newName)
+      ? path.join(backupResult.backupFolder, `images_${oldImgName}`)
+      : null;
+    if (oldSnapshot && fs.existsSync(oldSnapshot) && fs.existsSync(targetFull)) {
+      try { fs.copyFileSync(oldSnapshot, targetFull); } catch (e2) { console.warn('Restauration image vivante:', e2.message); }
+    }
+    throw new Error(
+      `copie d'image échouée : ${deployErr.message} — ABORT complet : aucune écriture de contenu.js, ` +
+      `staging conservé (site-web/images/_staging/${staging.filename}).`
+    );
+  }
+
+  // 4. Si l'extension déposée ≠ ancienne : suppression de l'ancienne image (même rang, pas de
+  //    doublon) — UNIQUEMENT APRÈS vérification SHA256 de la nouvelle image vivante.
+  let oldImgDeleted = false;
   if (oldImgName && oldImgName !== newName && oldImgFull && fs.existsSync(oldImgFull)) {
-    try { fs.unlinkSync(oldImgFull); } catch (e) { console.warn('Nettoyage ancienne image:', e.message); }
+    try { fs.unlinkSync(oldImgFull); oldImgDeleted = true; } catch (e) { console.warn('Suppression ancienne image:', e.message); }
   }
 
   // 5. Réécriture de la fiche N dans contenu.js (BOM + CRLF préservés, AUCUN décalage)
@@ -1288,13 +1379,17 @@ export async function executeReplacement(productRank, prixSaisi, uiChamps) {
     prix: champs.prix,
     backupFolder: backupResult.relativeFolder,
     champs,
-    statut: 'Remplacement Réussi via Groq Vision'
+    imageSha256: stagingHash,
+    statut: 'Remplacement Réussi via Groq Vision (copie image vérifiée SHA256)'
   });
 
-  // 8. Commit + push site-web (fichiers ciblés uniquement)
+  // 8. Commit + push site-web (fichiers ciblés uniquement — inclut la suppression
+  //    de l'ancienne image si l'extension a changé)
+  const commitFiles = [CONTENU_JS, targetFull];
+  if (oldImgDeleted && oldImgFull) commitFiles.push(oldImgFull);
   const commitResult = commitAndPushSite(
-    `chore: remplacement automatique produit-${rank} : « ${oldProduct.nom || 'œuvre'} » → « ${champs.nom} »`,
-    [CONTENU_JS, targetFull]
+    `chore: remplacement automatique produit-${rank} : « ${oldProduct.nom || 'œuvre'} » → « ${champs.nom} » (image vérifiée SHA256)`,
+    commitFiles
   );
 
   return {
@@ -1306,6 +1401,7 @@ export async function executeReplacement(productRank, prixSaisi, uiChamps) {
     nouveauNom: champs.nom,
     prix: champs.prix,
     targetImageRel: newImageRel,
+    imageSha256: stagingHash,
     backupFolder: backupResult.relativeFolder,
     backupName: backupResult.timestamp,
     commit: commitResult,

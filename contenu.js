@@ -177,7 +177,7 @@ const CONTENU_SITE = {
   // ─────────────────────────────────────────────────────────────
   // ✏️ Modifiez ces listes pour les adapter aux demandes de vos clients.
   // 💡 Chaque option possède un "id" (utilisé dans les produits) et un "label" (affiché).
-  // 🔄 Après modification, redéployez le site via Netlify Drop.
+  // 🔄 Après modification, redéployez le site via commit + push GitHub.
   // ─────────────────────────────────────────────────────────────
   options: {
 
@@ -233,9 +233,9 @@ const CONTENU_SITE = {
   //   Exemple : "prix": "À partir de xxxx MAD" (masqué)
   //   Exemple : "prix": "À partir de 850 MAD" (réel)
   //
-  // 🏷️ Catégories disponibles : abstrait, paysage, calligraphie, moderne, geometrique, floral
-  // 🎨 Styles disponibles : contemporain, traditionnel, minimaliste, boheme, art-deco
-  // 🏠 Environnements : salon, chambre, bureau, entree, salle-de-bain, cuisine
+  // 🏷️ Catégories disponibles : abstrait, paysages, calligraphie, moderne, geometrique, floral, autres
+  // 🎨 Styles disponibles : contemporain, traditionnel, minimaliste, boheme, art-deco, autres
+  // 🏠 Environnements : salon, chambre, bureau, entree, riad, cabinet, ecole-primaire, autres
   // ─────────────────────────────────────────────────────────────
   produits: [
     {
@@ -336,7 +336,7 @@ const CONTENU_SITE = {
       environnement: "riad",
       image: "images/produit-7.jpg",
       imageFallback: "🎨",
-      prix: "A partir de 100 MAD",
+      prix: "À partir de 100 MAD",
       badge: "Nouveau",
       materiauRecommande: "Toile Canvas",
       montageRecommande: "Cadre Américain",
