@@ -68,8 +68,16 @@ export const ALLOWED_MONTAGES = ["Cadre Américain", "Châssis Bois"];
 export const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 export const GROQ_VISION_MODEL = 'qwen/qwen3.6-27b';
 export const GROQ_TIMEOUT_MS = 180000; // Timeout 3 minutes par tentative
-export const GROQ_MAX_RETRIES = 3;      // 3 tentatives maximum
-export const GROQ_RETRY_DELAY_MS = 15000; // Pause de 15s entre chaque essai
+export const GROQ_MAX_RETRIES = 3;      // 3 tentatives normales maximum
+// 🛑 Garde-fou OTPM Groq (tier gratuit : limite 1000 OUTPUT tokens/minute) :
+// sans max_tokens, Groq réservait 1689 tokens de sortie → rejet 429 systématique.
+// On plafonne la sortie à 950 tokens + schéma compact (≈ 700 tokens réels) et on
+// traite le 429 par un backoff dédié d'une fenêtre OTPM (65 s).
+export const GROQ_MAX_TOKENS = 950;        // ≤ 950 : sous le plafond OTPM (1000/min)
+export const GROQ_RATE_LIMIT_RETRIES = 2;  // 2 tentatives supplémentaires dédiées au 429
+export const GROQ_RATE_LIMIT_DELAY_MS = Number(process.env.GROQ_RATE_LIMIT_DELAY_MS) || 65000; // fenêtre OTPM ≈ 1 min
+export const GROQ_RATE_LIMIT_TOAST = 'quota Groq : nouvelle tentative dans ~1 min'; // message toast clair
+export const GROQ_RETRY_DELAY_MS = Number(process.env.GROQ_RETRY_DELAY_MS) || 15000; // Pause de 15s entre essais normaux
 
 /**
  * Récupère la clé API configurée (GROQ_API_KEY prioritaire)
@@ -331,14 +339,76 @@ export function getCurrentCatalog() {
 }
 
 /**
+ * 🧩 Normalise la réponse JSON de l'IA vision vers la fiche 13 champs métier.
+ * Le schéma COMPACT à clés courtes (nom, desc, cat, style, env, coul[], amb,
+ * mat, mont, fallback) réduit de moitié la taille de sortie pour rester sous
+ * le plafond OTPM du tier gratuit Groq (max_tokens 950 vs limite 1000/min).
+ * Les clés longues (description, categorie, ...) restent acceptées par
+ * compatibilité. Prix et badge ne sont plus générés par l'IA (défauts moteur :
+ * « À partir de 180 MAD » / « Nouveau ») sauf si le modèle en renvoie.
+ */
+export function parseVisionChamps(parsed) {
+  const normalizeTaxonomy = (val, allowed, defaultVal) => {
+    if (!val) return defaultVal;
+    const lower = String(val).toLowerCase().trim();
+    const match = allowed.find(a => a.toLowerCase() === lower);
+    return match || defaultVal;
+  };
+
+  const categorie = normalizeTaxonomy(parsed.cat || parsed.categorie, ALLOWED_CATEGORIES, 'autres');
+  const style = normalizeTaxonomy(parsed.style, ALLOWED_STYLES, 'traditionnel');
+  const environnement = normalizeTaxonomy(parsed.env || parsed.environnement, ALLOWED_ENVIRONNEMENTS, 'salon');
+
+  const matRaw = String(parsed.mat || parsed.materiauRecommande || '').toLowerCase();
+  let materiauRecommande = 'Toile Canvas';
+  if (matRaw.includes('bâche') || matRaw.includes('bache') || matRaw.includes('haute définition') || matRaw.includes('haute definition')) {
+    materiauRecommande = 'bâche premium';
+  }
+
+  const montRaw = String(parsed.mont || parsed.montageRecommande || '').toLowerCase();
+  let montageRecommande = 'Cadre Américain';
+  if (montRaw.includes('châssis') || montRaw.includes('chassis')) {
+    montageRecommande = 'Châssis Bois';
+  }
+
+  const rawCouleurs = parsed.coul || parsed.couleurs;
+  const couleurs = Array.isArray(rawCouleurs) && rawCouleurs.length > 0
+    ? rawCouleurs.slice(0, 5)
+    : ['Beige', 'Doré', 'Noir'];
+
+  const rawPrix = parsed.px || parsed.prix;
+  const rawBadge = parsed.bd || parsed.badge;
+
+  return {
+    nom: parsed.nom || 'Calligraphie & Arabesques Dorées',
+    description: parsed.desc || parsed.description || 'Tableau mural d\'exception alliant la noblesse de la calligraphie à des finitions contemporaines haut de gamme.',
+    categorie,
+    style,
+    environnement,
+    imageFallback: parsed.fallback || parsed.imageFallback || (categorie === 'calligraphie' ? '📜' : '🎨'),
+    prix: rawPrix || 'À partir de 180 MAD',
+    badge: rawBadge !== undefined ? rawBadge : 'Nouveau',
+    materiauRecommande,
+    montageRecommande,
+    couleurs,
+    ambiance: parsed.amb || parsed.ambiance || 'Spirituelle, noble et chaleureuse'
+  };
+}
+
+/**
  * ═══════════════════════════════════════════════════════════════════════════
- * 👁️ VRAIE ANALYSE VISUELLE DE L'IMAGE PAR GROQ VISION (LLAMA-3.2-90B-VISION)
+ * 👁️ VRAIE ANALYSE VISUELLE DE L'IMAGE PAR GROQ VISION
  * ═══════════════════════════════════════════════════════════════════════════
  * Déduit fidèlement les 13 attributs métier d'après l'image réelle déposée.
+ * Utilisée par les 3 chemins de la Tour : insertion, remplacement, régénération.
  * 🛑 Garde-fous :
  * - Timeout 3 minutes par requête (AbortController)
-* - 3 tentatives avec pause de 15 secondes
- * - Si échec total : interruption propre et explicite (jamais de copier-coller)
+ * - max_tokens plafonné à 950 (tier gratuit Groq : limite OTPM 1000/min)
+ * - Schéma JSON compact à clés courtes (≈ 700 tokens réels de sortie)
+ * - 3 tentatives normales avec pause de 15 secondes
+ * - 429 OTPM : 2 tentatives supplémentaires espacées de 65 s (fenêtre OTPM)
+ * - Si échec total : interruption propre et explicite (jamais de copier-coller),
+ *   aucune fiche écrite, maquette en attente / staging conservés.
  */
 export async function analyzeMockupWithAI(imagePath) {
   // 🔌 Crochet de TEST déterministe (hors production) : si CONTROL_TOWER_FAKE_AI contient
@@ -372,7 +442,7 @@ export async function analyzeMockupWithAI(imagePath) {
 
   const systemPrompt = `Tu es l'expert en histoire de l'art décoratif et conservateur de collection pour la maison d'artisanat d'art « Tableaux Muraux » à Marrakech.
 
-Ton rôle est d'analyser l'image fournie de cette maquette de tableau mural et d'en extraire avec une PRÉCISION ABSOLUE sa fiche technique de 13 champs pour le catalogue officiel.
+Ton rôle est d'analyser l'image fournie de cette maquette de tableau mural et d'en extraire avec une PRÉCISION ABSOLUE les éléments de sa fiche technique pour le catalogue officiel (le moteur complète ensuite les 13 champs métier).
 
 INSTRUCTIONS D'OBSERVATION VISUELLE STRICTE :
 1. SUJET RÉEL :
@@ -382,39 +452,29 @@ INSTRUCTIONS D'OBSERVATION VISUELLE STRICTE :
    - Si l'œuvre est abstraite minérale / texturée sans texte, la catégorie est "abstrait".
    - Si l'œuvre représente des fleurs / végétation, la catégorie est "floral".
 
-2. PALETTE DE COULEURS OBSERVÉE (champ "couleurs") :
+2. PALETTE DE COULEURS OBSERVÉE (champ "coul") :
    - Extrais uniquement les 3 à 5 teintes RÉELLEMENT et VISIBLEMENT présentes dans l'image (ex: ["Beige", "Crème", "Doré", "Noir Profond"] pour une calligraphie dorée sur fond crème, ou ["Bleu Majorelle", "Vert Émeraude", "Blanc"] pour un patio).
 
-3. SUPPORT ET MATÉRIAU RECOMMANDÉ (champ "materiauRecommande") :
+3. SUPPORT ET MATÉRIAU RECOMMANDÉ (champ "mat") :
    - Choisis "Toile Canvas" si l'image présente un grain texturé artistique, un effet de peinture sur toile, un fond granuleux, de la matière ou des touches dorées artisanales.
    - Choisis "bâche premium" si l'image est un rendu photographique ultra-lisse, brillant, à haute netteté ou contemporain.
 
-4. TAXONOMIE OBLIGATOIRE (valeurs exactes autorisées) :
-   - "categorie" : STRICTEMENT l'une de ["abstrait", "paysages", "calligraphie", "moderne", "geometrique", "floral", "autres"].
+4. TAXONOMIE OBLIGATOIRE (valeurs exactes autorisées, à reporter dans les clés courtes) :
+   - "cat" : STRICTEMENT l'une de ["abstrait", "paysages", "calligraphie", "moderne", "geometrique", "floral", "autres"].
    - "style" : STRICTEMENT l'une de ["contemporain", "traditionnel", "minimaliste", "boheme", "art-deco", "autres"].
-   - "environnement" : STRICTEMENT l'une de ["salon", "chambre", "bureau", "entree", "riad", "cabinet", "ecole-primaire", "autres"].
-   - "materiauRecommande" : STRICTEMENT "Toile Canvas" ou "bâche premium".
-   - "montageRecommande" : STRICTEMENT "Cadre Américain" ou "Châssis Bois".
-   - "badge" : "Nouveau" (ou "Coup de cœur", "Collection Riad", "Édition Limitée", ou null).
-   - "prix" : "À partir de 180 MAD" (ou "À partir de 120 MAD", "À partir de 220 MAD", "À partir de 250 MAD").
-   - "imageFallback" : Un emoji adapté (ex: "📜" pour calligraphie, "🏺" pour riad/poterie, "✨" pour or/zellige, "🕌" pour islamique, "🎨" pour abstrait, "🌴" pour paysages).
+   - "env" : STRICTEMENT l'une de ["salon", "chambre", "bureau", "entree", "riad", "cabinet", "ecole-primaire", "autres"].
+   - "mat" : STRICTEMENT "Toile Canvas" ou "bâche premium".
+   - "mont" : STRICTEMENT "Cadre Américain" ou "Châssis Bois".
+   - "fallback" : Un emoji adapté (ex: "📜" pour calligraphie, "🏺" pour riad/poterie, "✨" pour or/zellige, "🕌" pour islamique, "🎨" pour abstrait, "🌴" pour paysages).
 
-5. FORMAT DE RÉPONSE :
-Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans bloc markdown additionnel :
-{
-  "nom": "Titre poétique et noble en français",
-  "description": "2 à 3 phrases vendeuses décrivant avec exactitude la composition, les textures, les jeux de lumière et l'élégance de l'œuvre",
-  "categorie": "calligraphie",
-  "style": "traditionnel",
-  "environnement": "salon",
-  "imageFallback": "📜",
-  "prix": "À partir de 180 MAD",
-  "badge": "Nouveau",
-  "materiauRecommande": "Toile Canvas",
-  "montageRecommande": "Cadre Américain",
-  "couleurs": ["Beige", "Crème", "Doré", "Noir"],
-  "ambiance": "Spirituelle, noble et chaleureuse"
-}`;
+5. FORMAT DE RÉPONSE (SCHÉMA COMPACT — budget de sortie STRICT, clés courtes obligatoires) :
+Réponds UNIQUEMENT avec un objet JSON pur, sans bloc markdown, en utilisant EXACTEMENT ces clés courtes :
+{"nom":"Titre poétique et noble en français","desc":"2 phrases maximum, précises (composition, textures, lumière)","cat":"calligraphie","style":"traditionnel","env":"salon","coul":["Beige","Crème","Doré"],"amb":"Spirituelle, noble et chaleureuse","mat":"Toile Canvas","mont":"Cadre Américain","fallback":"📜"}
+
+CONTRAINTES DE COMPACITÉ (non négociables — plafond de tokens de sortie) :
+- "desc" : 2 phrases MAXIMUM, pas une de plus.
+- "coul" : 3 à 4 teintes VISIBLES maximum, un seul mot par teinte.
+- AUCUN champ supplémentaire, AUCUN commentaire, AUCUN texte hors du JSON.`;
 
   let lastError = null;
 
@@ -441,47 +501,7 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
       }
 
       const cleanJson = rawContent.replace(/^```json/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
-      const parsed = JSON.parse(cleanJson);
-
-      const normalizeTaxonomy = (val, allowed, defaultVal) => {
-        if (!val) return defaultVal;
-        const lower = String(val).toLowerCase().trim();
-        const match = allowed.find(a => a.toLowerCase() === lower);
-        return match || defaultVal;
-      };
-
-      const categorie = normalizeTaxonomy(parsed.categorie, ALLOWED_CATEGORIES, 'autres');
-      const style = normalizeTaxonomy(parsed.style, ALLOWED_STYLES, 'traditionnel');
-      const environnement = normalizeTaxonomy(parsed.environnement, ALLOWED_ENVIRONNEMENTS, 'salon');
-
-      let materiauRecommande = 'Toile Canvas';
-      if (parsed.materiauRecommande && parsed.materiauRecommande.toLowerCase().includes('haute définition')) {
-        materiauRecommande = 'bâche premium';
-      }
-
-      let montageRecommande = 'Cadre Américain';
-      if (parsed.montageRecommande && parsed.montageRecommande.toLowerCase().includes('châssis')) {
-        montageRecommande = 'Châssis Bois';
-      }
-
-      const couleurs = Array.isArray(parsed.couleurs) && parsed.couleurs.length > 0
-        ? parsed.couleurs.slice(0, 5)
-        : ['Beige', 'Doré', 'Noir'];
-
-      const result = {
-        nom: parsed.nom || 'Calligraphie & Arabesques Dorées',
-        description: parsed.description || 'Tableau mural d\'exception alliant la noblesse de la calligraphie à des finitions contemporaines haut de gamme.',
-        categorie,
-        style,
-        environnement,
-        imageFallback: parsed.imageFallback || (categorie === 'calligraphie' ? '📜' : '🎨'),
-        prix: parsed.prix || 'À partir de 180 MAD',
-        badge: parsed.badge !== undefined ? parsed.badge : 'Nouveau',
-        materiauRecommande,
-        montageRecommande,
-        couleurs,
-        ambiance: parsed.ambiance || 'Spirituelle, noble et chaleureuse'
-      };
+      const result = parseVisionChamps(JSON.parse(cleanJson));
 
       console.log(`[Gemini Vision] ✅ Analyse réussie pour « ${result.nom} » (Catégorie : ${result.categorie})`);
       return result;
@@ -492,15 +512,26 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
   }
 
   // Si Groq Vision est demandé ou en fallback
+  // 🔁 Boucle à deux budgets : 3 essais normaux (pause 15 s) + 2 essais
+  // supplémentaires dédiés au 429 OTPM (pause 65 s = fenêtre OTPM Groq).
+  let lastWasRateLimit = false;
+  let rateLimitRetriesUsed = 0;
+  let totalAttempts = 0;
+
   for (let attempt = 1; attempt <= GROQ_MAX_RETRIES; attempt++) {
     console.log(`[Groq Vision] Tentative ${attempt}/${GROQ_MAX_RETRIES} d'analyse visuelle via ${GROQ_VISION_MODEL}...`);
 
     try {
+      totalAttempts++;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
 
       const requestBody = {
         model: GROQ_VISION_MODEL,
+        // 🛑 Garde-fou OTPM (tier gratuit : 1000 tokens de sortie/min) : sans
+        // max_tokens, Groq réservait 1689 tokens → 429 systématique. 950 +
+        // schéma compact à clés courtes ≈ 700 tokens réels de sortie.
+        max_tokens: GROQ_MAX_TOKENS,
         messages: [
           {
             role: 'user',
@@ -537,7 +568,9 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
 
       if (!response.ok) {
         const errBody = await response.text();
-        throw new Error(`Erreur API Groq (${response.status} ${response.statusText}): ${errBody}`);
+        const apiError = new Error(`Erreur API Groq (${response.status} ${response.statusText}): ${errBody}`);
+        if (response.status === 429) apiError.isGroqRateLimit = true; // 429 OTPM → retry spécial 65 s
+        throw apiError;
       }
 
       const jsonResponse = await response.json();
@@ -548,48 +581,7 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
       }
 
       const cleanJson = rawContent.replace(/^```json/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
-      const parsed = JSON.parse(cleanJson);
-
-      // Validation et normalisation stricte selon la taxonomie de contenu.js
-      const normalizeTaxonomy = (val, allowed, defaultVal) => {
-        if (!val) return defaultVal;
-        const lower = String(val).toLowerCase().trim();
-        const match = allowed.find(a => a.toLowerCase() === lower);
-        return match || defaultVal;
-      };
-
-      const categorie = normalizeTaxonomy(parsed.categorie, ALLOWED_CATEGORIES, 'autres');
-      const style = normalizeTaxonomy(parsed.style, ALLOWED_STYLES, 'traditionnel');
-      const environnement = normalizeTaxonomy(parsed.environnement, ALLOWED_ENVIRONNEMENTS, 'salon');
-      
-      let materiauRecommande = 'Toile Canvas';
-      if (parsed.materiauRecommande && parsed.materiauRecommande.toLowerCase().includes('haute définition')) {
-        materiauRecommande = 'bâche premium';
-      }
-
-      let montageRecommande = 'Cadre Américain';
-      if (parsed.montageRecommande && parsed.montageRecommande.toLowerCase().includes('châssis')) {
-        montageRecommande = 'Châssis Bois';
-      }
-
-      const couleurs = Array.isArray(parsed.couleurs) && parsed.couleurs.length > 0
-        ? parsed.couleurs.slice(0, 5)
-        : ['Beige', 'Doré', 'Noir'];
-
-      const result = {
-        nom: parsed.nom || 'Calligraphie & Arabesques Dorées',
-        description: parsed.description || 'Tableau mural d\'exception alliant la noblesse de la calligraphie à des finitions contemporaines haut de gamme.',
-        categorie,
-        style,
-        environnement,
-        imageFallback: parsed.imageFallback || (categorie === 'calligraphie' ? '📜' : '🎨'),
-        prix: parsed.prix || 'À partir de 180 MAD',
-        badge: parsed.badge !== undefined ? parsed.badge : 'Nouveau',
-        materiauRecommande,
-        montageRecommande,
-        couleurs,
-        ambiance: parsed.ambiance || 'Spirituelle, noble et chaleureuse'
-      };
+      const result = parseVisionChamps(JSON.parse(cleanJson));
 
       console.log(`[Groq Vision] ✅ Analyse réussie pour « ${result.nom} » (Catégorie : ${result.categorie})`);
       return result;
@@ -597,8 +589,30 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
     } catch (err) {
       lastError = err;
       const isAbort = err.name === 'AbortError';
+      lastWasRateLimit = err.isGroqRateLimit === true ||
+        /\b429\b/.test(err.message || '') ||
+        /rate_?limit/i.test(err.message || '');
       const errMsg = isAbort ? 'Délai d\'attente dépassé (Timeout 3 min)' : err.message;
       console.warn(`[Groq Vision] ⚠️ Échec tentative ${attempt}/${GROQ_MAX_RETRIES} : ${errMsg}`);
+
+      // 🔁 Retry SPÉCIAL 429 OTPM : jusqu'à 2 tentatives supplémentaires espacées
+      // de 65 s (fenêtre OTPM Groq). Elles ne consomment PAS le budget des 3 essais
+      // normaux (l'essai rejeté en 429 est « recrédité » : rien n'a été traité).
+      if (lastWasRateLimit) {
+        if (rateLimitRetriesUsed < GROQ_RATE_LIMIT_RETRIES) {
+          rateLimitRetriesUsed++;
+          attempt--;
+          console.warn(
+            `[Groq Vision] ⏳ 429 OTPM (plafond sortie Groq) — ${GROQ_RATE_LIMIT_TOAST} ` +
+            `(pause ${Math.round(GROQ_RATE_LIMIT_DELAY_MS / 1000)}s, retry spécial ${rateLimitRetriesUsed}/${GROQ_RATE_LIMIT_RETRIES})...`
+          );
+          await new Promise(resolve => setTimeout(resolve, GROQ_RATE_LIMIT_DELAY_MS));
+          continue;
+        }
+        // Quota toujours dépassé après les 2 retries spéciaux : re-tenter dans 15 s
+        // ne peut pas franchir la fenêtre OTPM → abort propre immédiat.
+        break;
+      }
 
       if (attempt < GROQ_MAX_RETRIES) {
         console.log(`[Groq Vision] ⏳ Pause de ${GROQ_RETRY_DELAY_MS / 1000}s avant nouvelle tentative...`);
@@ -607,9 +621,16 @@ Réponds UNIQUEMENT avec un objet JSON pur conforme au schéma suivant, sans blo
     }
   }
 
-  // Si les 3 tentatives échouent : arrêt bloquant sans copier-coller
+  // Si toutes les tentatives échouent : arrêt bloquant sans copier-coller
+  // (aucune fiche écrite, maquette en attente / staging conservés).
+  if (lastWasRateLimit) {
+    throw new Error(
+      `Quota Groq atteint (429 OTPM — sortie plafonnée à ${GROQ_MAX_TOKENS} tokens) après ${totalAttempts} tentatives : ${GROQ_RATE_LIMIT_TOAST}. ` +
+      `Aucune fiche n'a été écrite et la maquette en attente est conservée (staging intact) — relancez l'action dans ~1 minute.`
+    );
+  }
   throw new Error(
-    `Échec de l'analyse visuelle par l'IA Groq (${GROQ_VISION_MODEL}) après ${GROQ_MAX_RETRIES} tentatives : ${lastError?.message || 'Erreur inconnue'}.\n` +
+    `Échec de l'analyse visuelle par l'IA Groq (${GROQ_VISION_MODEL}) après ${totalAttempts} tentatives : ${lastError?.message || 'Erreur inconnue'}.\n` +
     `L'intégration a été interrompue afin de préserver l'intégrité du catalogue et d'éviter toute fausse fiche.`
   );
 }
