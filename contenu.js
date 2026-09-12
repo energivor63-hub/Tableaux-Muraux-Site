@@ -471,7 +471,7 @@ const CONTENU_SITE = {
       environnement: "salon",
       image: "images/produit-16.jpg",
       imageFallback: "🎨",
-      prix: "À partir de 210 MAD",
+      prix: "À partir de 190 MAD",
       badge: null,
       materiauRecommande: "Toile Canvas",
       montageRecommande: "Toile Tendue",
