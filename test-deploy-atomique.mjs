@@ -65,7 +65,7 @@ execFileSync('git', ['commit', '-m', 'init sandbox'], { cwd: SANDBOX_SITE });
 
 const engine = await import(pathToFileURL(SANDBOX_ENGINE).href);
 const catalogBefore = engine.getCurrentCatalog();
-check('sandbox prêt : 11 produits lus depuis la copie de contenu.js', catalogBefore.length === 11, `trouvé : ${catalogBefore.length}`);
+check('sandbox prêt : 16 produits lus depuis la copie de contenu.js', catalogBefore.length === 16, `trouvé : ${catalogBefore.length}`);
 
 const champsA = {
   nom: 'Arc de Test Nominal',

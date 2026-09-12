@@ -28,7 +28,9 @@ import {
   executeReplacement,
   getJournalHistory,
   listBackups,
-  restoreBackup
+  restoreBackup,
+  rewriteProductAtRank,
+  commitAndPushSite
 } from './control-tower-engine.js';
 import { handlePinterestPublish } from './buffer-pinterest.js';
 
@@ -423,6 +425,117 @@ app.post('/api/control-tower/trigger-replacement', async (req, res) => {
   } catch (err) {
     console.error('Erreur déclenchement remplacement:', err);
     res.status(400).type('application/json').json({ success: false, error: err.message, messageClair: err.message });
+  }
+});
+
+// « Édition de fiche » (prix, nom, badge, catégorie, style, environnement, couleurs, ambiance,
+// matériau, montage, description) : backup horodaté → contenu.js réécrit SANS décalage
+// (BOM + CRLF préservés) → journal « ÉDITION produit-N : ancien prix → nouveau prix » →
+// commit + push. L'image n'est JAMAIS touchée ici (réservée au remplacement produit-N).
+app.post('/api/control-tower/update-product', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rank = Number(body.productRank);
+    const uiChamps = (body.champs && typeof body.champs === 'object') ? body.champs : {};
+
+    const catalog = getCurrentCatalog();
+    if (!Number.isInteger(rank) || rank < 1 || rank > catalog.length) {
+      return res.status(400).type('application/json').json({
+        success: false,
+        error: `produit-${rank} introuvable (catalogue : 1..${catalog.length}) — édition annulée, aucune écriture.`
+      });
+    }
+    const oldProduct = catalog[rank - 1];
+
+    // 0. Fusion des champs éditables : valeur fournie > valeur actuelle. Image INTACTE.
+    const str = (v) => (typeof v === 'string' ? v : (v == null ? '' : String(v)));
+    const couleursFournies = Array.isArray(uiChamps.couleurs)
+      ? uiChamps.couleurs.map((c) => String(c).trim()).filter(Boolean)
+      : (typeof uiChamps.couleurs === 'string'
+        ? uiChamps.couleurs.split(',').map((c) => c.trim()).filter(Boolean)
+        : null);
+
+    const champs = {
+      nom: str(uiChamps.nom).trim() || oldProduct.nom,
+      description: str(uiChamps.description).trim() || oldProduct.description,
+      categorie: str(uiChamps.categorie).trim() || oldProduct.categorie,
+      style: str(uiChamps.style).trim() || oldProduct.style,
+      environnement: str(uiChamps.environnement).trim() || oldProduct.environnement,
+      prix: str(uiChamps.prix).trim() || oldProduct.prix || 'À partir de 180 MAD',
+      badge: str(uiChamps.badge).trim() || null,
+      materiauRecommande: str(uiChamps.materiauRecommande).trim() || oldProduct.materiauRecommande,
+      montageRecommande: str(uiChamps.montageRecommande).trim() || oldProduct.montageRecommande,
+      couleurs: (couleursFournies && couleursFournies.length ? couleursFournies : (oldProduct.couleurs || [])),
+      ambiance: str(uiChamps.ambiance).trim() || oldProduct.ambiance
+    };
+
+    // 1. Sauvegarde horodatée AVANT toute modification (miroir de createReplacementBackup,
+    //    moteur laissé intact) : contenu.js + pages clés dans sauvegardes/backup_..._edition_pN
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}h${pad(now.getMinutes())}m${pad(now.getSeconds())}s`;
+    const backupName = `backup_${timestamp}_edition_p${rank}`;
+    const backupFolder = path.join(ROOT_DIR, 'sauvegardes', backupName);
+    fs.mkdirSync(backupFolder, { recursive: true });
+    ['contenu.js', 'site-config.js', 'index.html', 'materials.html', 'process.html', 'privacy.html'].forEach((f) => {
+      const src = path.join(SITE_DIR, f);
+      if (fs.existsSync(src)) {
+        try { fs.copyFileSync(src, path.join(backupFolder, f)); } catch (e) { console.warn('Backup édition:', e.message); }
+      }
+    });
+    const relativeBackup = `sauvegardes/${backupName}`;
+
+    // 2. Écriture contenu.js SANS décalage (BOM + CRLF préservés, image du rang inchangée)
+    rewriteProductAtRank(rank, champs, undefined);
+    // 3. Journal des Intégrations : « ÉDITION produit-N : ancien prix → nouveau prix »
+    const entry = {
+      type: 'EDITION',
+      id: `ed_${Date.now()}`,
+      date: now.toLocaleString('fr-FR'),
+      isoDate: now.toISOString(),
+      produit: `produit-${rank}`,
+      productRank: rank,
+      nouveauNom: champs.nom,
+      ancienNom: oldProduct.nom || '(sans nom)',
+      ancienPrix: oldProduct.prix || '',
+      nouveauPrix: champs.prix,
+      prix: champs.prix,
+      backupFolder: relativeBackup,
+      champs,
+      statut: 'Édition Réussie via Tour de Contrôle (fiche réécrite sans décalage, image inchangée)'
+    };
+    const journalJsonPath = path.join(ROOT_DIR, 'journal_integrations.json');
+    let history = [];
+    try { history = JSON.parse(fs.readFileSync(journalJsonPath, 'utf-8')); } catch (e) { history = []; }
+    if (!Array.isArray(history)) history = [];
+    history.unshift(entry);
+    fs.writeFileSync(journalJsonPath, JSON.stringify(history, null, 2), 'utf-8');
+    const txtLine =
+      `[${entry.date}] ÉDITION ${entry.produit} : ancien prix « ${entry.ancienPrix} » → nouveau prix « ${entry.nouveauPrix} » | Nom : « ${entry.ancienNom} » → « ${entry.nouveauNom} » | Sauvegarde : ${relativeBackup} | Statut : ${entry.statut}\n` +
+      `  ↳ Détails : Catégorie: ${champs.categorie} | Style: ${champs.style} | Pièce: ${champs.environnement} | Matériau: ${champs.materiauRecommande} | Finition: ${champs.montageRecommande} | Couleurs: ${JSON.stringify(champs.couleurs)}\n\n`;
+    try { fs.appendFileSync(JOURNAL_TXT, txtLine, 'utf-8'); } catch (e) { console.error('Erreur écriture journal TXT édition:', e.message); }
+
+    // 4. Commit + push site-web (contenu.js uniquement — moteurs et UI exclus du commit)
+    const commitResult = commitAndPushSite(
+      `chore: édition fiche produit-${rank} : « ${entry.ancienNom} » — prix « ${entry.ancienPrix} » → « ${entry.nouveauPrix} » (sans décalage)`,
+      [path.join(SITE_DIR, 'contenu.js')]
+    );
+
+    // 5. Réponse : toast + rafraîchissement grille côté UI
+    return res.type('application/json').json({
+      success: true,
+      type: 'EDITION',
+      productRank: rank,
+      produit: `produit-${rank}`,
+      ancienPrix: entry.ancienPrix,
+      nouveauPrix: entry.nouveauPrix,
+      backupFolder: relativeBackup,
+      commit: commitResult,
+      messageClair: `Fiche du produit-${rank} éditée : prix « ${entry.ancienPrix} » → « ${entry.nouveauPrix} ». Image inchangée (pour l'image : remplacement produit-${rank}). Sauvegarde : ${relativeBackup}.`
+    });
+  } catch (err) {
+    console.error('Erreur édition produit:', err);
+    return res.status(400).type('application/json').json({ success: false, error: err.message, messageClair: err.message });
   }
 });
 
