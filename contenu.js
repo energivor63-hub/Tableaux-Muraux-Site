@@ -463,8 +463,7 @@ const CONTENU_SITE = {
       couleurs: ["Ocre", "Terracotta", "Vert olive", "Crème"],
       ambiance: "Chaleureuse, lumineuse et méditerranéenne"
     },
-    // ✏️ Pour ajouter un produit, copiez un bloc { ... } ci-dessus
-    {
+    // ✏️ Pour ajouter un produit, copiez un bloc {
       nom: "Ondes Sculpturales",
       description: "Triptyque abstrait aux lignes organiques et reliefs subtils, dans des tons naturels. Une composition élégante qui apporte lumière, douceur et modernité au salon.",
       categorie: "abstrait",
@@ -472,12 +471,12 @@ const CONTENU_SITE = {
       environnement: "salon",
       image: "images/produit-16.jpg",
       imageFallback: "🎨",
-      prix: "À partir de 190 MAD",
+      prix: "À partir de 210 MAD",
       badge: null,
       materiauRecommande: "Toile Canvas",
       montageRecommande: "Toile Tendue",
       couleurs: ["Ivoire", "Beige", "Taupe", "Grège"],
-      ambiance: "Calme, lumineuse"
+      ambiance: "Calme, lumineuse",
     },
     // 📝 Champs modifiables : nom, description, categorie, style, environnement,
     //                        image, prix, badge, materiauRecommande, montageRecommande,
