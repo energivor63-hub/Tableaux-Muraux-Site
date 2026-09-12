@@ -463,7 +463,7 @@ const CONTENU_SITE = {
       couleurs: ["Ocre", "Terracotta", "Vert olive", "Crème"],
       ambiance: "Chaleureuse, lumineuse et méditerranéenne"
     },
-    // ✏️ Pour ajouter un produit, copiez un bloc {
+    {
       nom: "Ondes Sculpturales",
       description: "Triptyque abstrait aux lignes organiques et reliefs subtils, dans des tons naturels. Une composition élégante qui apporte lumière, douceur et modernité au salon.",
       categorie: "abstrait",
@@ -482,6 +482,8 @@ const CONTENU_SITE = {
     //                        image, prix, badge, materiauRecommande, montageRecommande,
     //                        couleurs, ambiance
   ],
+  // ✏️ Pour ajouter un produit : utilisez la Tour de Contrôle (zone INSERTION produit-0),
+  // ou copiez manuellement un bloc produit ci-dessus — les rangs se décalent alors de N+1.
 
   // ─────────────────────────────────────────────────────────────
   // ⭐ TÉMOIGNAGES CLIENTS
