@@ -1,0 +1,50 @@
+{
+  "version": "v6",
+  "edition": "2026-09-13",
+  "validite_jours": 30,
+  "devise": "MAD",
+  "variables_metier": {
+    "prix_bache_40x50": 70,
+    "prix_canvas_40x50": 120
+  },
+  "parametres_internes": {
+    "format_reference_m2": 0.20,
+    "arrondi_multiple": 5,
+    "bois": [
+      { "id": "pin",   "label_interne": "Pin standard", "taux_metre_lineaire": 70 },
+      { "id": "hetre", "label_interne": "Hêtre",        "taux_metre_lineaire": 90 },
+      { "id": "chene", "label_interne": "Chêne",        "taux_metre_lineaire": 125 }
+    ],
+    "bois_selectionne": "pin"
+  },
+  "confidentialite": {
+    "ne_jamais_afficher_dans_le_registre": [
+      "taux_par_m2", "types_de_bois", "taux_metre_lineaire", "formules_de_calcul"
+    ]
+  },
+  "formats": [
+    { "id": "40x50",   "label": "40 × 50 cm",   "l_m": 0.40, "h_m": 0.50 },
+    { "id": "50x70",   "label": "50 × 70 cm",   "l_m": 0.50, "h_m": 0.70 },
+    { "id": "60x80",   "label": "60 × 80 cm",   "l_m": 0.60, "h_m": 0.80 },
+    { "id": "80x120",  "label": "80 × 120 cm",  "l_m": 0.80, "h_m": 1.20 },
+    { "id": "100x150", "label": "100 × 150 cm", "l_m": 1.00, "h_m": 1.50 }
+  ],
+  "regles": {
+    "taux_derives": "taux = variable_metier ÷ 0.20 (calcul interne, jamais affiché)",
+    "triptyque": "3 × prix du panneau (assemblage et repères d'alignement inclus)",
+    "panoramique": "sur demande — devis 24 h",
+    "personnalise": "interne : surface × taux + périmètre × taux_bois, arrondi multiple de 5",
+    "catalogue_autre_format": "prix catalogue + (prix combinaison cible − prix combinaison d'origine)"
+  },
+  "services_inclus": [
+    "Création sur demande par sujet : 2 propositions + 1 révision (révision supp. +50 MAD)",
+    "Projection visuelle de l'œuvre dans votre espace sur photo, sans engagement",
+    "Livraison à domicile sans installation"
+  ],
+  "mentions": [
+    "TVA non applicable — auto-entrepreneur",
+    "Prix valables 30 jours à compter de la date d'édition",
+    "Format minimum : 40 × 50 cm",
+    "Cette édition annule et remplace les précédentes"
+  ]
+}
