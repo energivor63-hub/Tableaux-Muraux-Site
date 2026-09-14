@@ -33,6 +33,10 @@ import {
   commitAndPushSite
 } from './control-tower-engine.js';
 import { handlePinterestPublish } from './buffer-pinterest.js';
+// 💰 Synchro prix (ajout v2) — import ADDITIF : aucune fonction existante retouchée.
+import { spawnNode, masquerSecrets } from './control-tower-engine.js';
+import crypto from 'crypto';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -768,6 +772,210 @@ app.delete('/api/social/drafts/:id', (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.json({ success: false, error: err.message });
+  }
+});
+
+// ==========================================
+// 💰 SYNCHRO PRIX — routes admin (ajout v2, bouton Tour de Contrôle)
+//   GET  /api/control-tower/sync-prix/preview  → lecture seule (dry-run/preview)
+//   POST /api/control-tower/sync-prix/run      → tarifs puis contenu (--apply)
+// Auth : X-Tower-Token (temps constant) + Referer localhost/tour-de-controle.html.
+// Indépendant de Groq : si GROQ_API_KEY est absente/invalide, ces routes marchent.
+// TOUTES les réponses et logs passent par masquerSecrets() (gsk_*** — jamais de clé).
+// ==========================================
+
+const TOWER_SYNC_TOKEN = String(process.env.TOWER_SYNC_TOKEN || '').trim();
+const SYNC_TARIFS_SCRIPT = path.join(ROOT_DIR, 'registre', 'synchro_tarifs_unifie.mjs');
+const SYNC_CONTENU_SCRIPT = path.join(ROOT_DIR, 'registre', 'synchro_contenu_images.mjs');
+const SYNC_HTML_UNIFIE = path.join(ROOT_DIR, 'registre', 'Registre-Tarifs-2026-09-14-Unifie.html');
+const SYNC_CONTENU_JS = path.join(SITE_DIR, 'contenu.js');
+const SYNC_BACKUP_DIR = path.join(ROOT_DIR, 'sauvegardes', 'sync-prix');
+const SYNC_JOURNAL_JSON = path.join(ROOT_DIR, 'journaux', 'sync-prix-journal.json');
+
+/** Journal synchro (JSON local) — entrées déjà masquées, jamais de secret. */
+function journaliserSynchro(entree) {
+  try {
+    let historique = [];
+    if (fs.existsSync(SYNC_JOURNAL_JSON)) {
+      try { historique = JSON.parse(fs.readFileSync(SYNC_JOURNAL_JSON, 'utf-8')); } catch (e) { historique = []; }
+    }
+    if (!Array.isArray(historique)) historique = [];
+    historique.unshift(entree);
+    fs.mkdirSync(path.dirname(SYNC_JOURNAL_JSON), { recursive: true });
+    fs.writeFileSync(SYNC_JOURNAL_JSON, JSON.stringify(historique, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[sync-prix] journal non écrit :', e.message);
+  }
+}
+
+/** Comparaison du jeton en TEMPS CONSTANT (sha256 + timingSafeEqual). */
+function jetonValide(req) {
+  const fourni = String(req.headers['x-tower-token'] || '');
+  const attendu = TOWER_SYNC_TOKEN;
+  if (!attendu || !fourni) return false;
+  const hFourni = crypto.createHash('sha256').update(fourni).digest();
+  const hAttendu = crypto.createHash('sha256').update(attendu).digest();
+  return crypto.timingSafeEqual(hFourni, hAttendu);
+}
+
+/** L'action doit venir de tour-de-controle.html servi en localhost. */
+function refererValide(req) {
+  const ref = String(req.headers.referer || '').toLowerCase();
+  if (!ref) return false;
+  if (!ref.includes('tour-de-controle.html')) return false;
+  return ref.includes('//localhost') || ref.includes('//127.0.0.1');
+}
+
+/** Envoi d'une réponse JSON re-masquée en dernière barrière. */
+function reponseMasquee(res, code, payload) {
+  res.status(code).type('application/json').send(masquerSecrets(JSON.stringify(payload)));
+}
+
+/** Garde commune : 503 config absente → 401 jeton → 403 referer. */
+function gardeSynchro(req, res) {
+  if (!TOWER_SYNC_TOKEN) {
+    console.warn('[sync-prix] 503 — synchro non configurée : TOWER_SYNC_TOKEN manquant dans .env (valeur jamais affichée).');
+    reponseMasquee(res, 503, {
+      ok: false,
+      code: 503,
+      error: 'synchro non configurée',
+      message: 'Synchro non configurée : TOWER_SYNC_TOKEN manquant dans .env'
+    });
+    return false;
+  }
+  if (!jetonValide(req)) {
+    reponseMasquee(res, 401, {
+      ok: false,
+      code: 401,
+      error: 'jeton invalide ou absent',
+      message: 'Jeton X-Tower-Token invalide ou absent.'
+    });
+    return false;
+  }
+  if (!refererValide(req)) {
+    reponseMasquee(res, 403, {
+      ok: false,
+      code: 403,
+      error: 'referer invalide',
+      message: "Origine non autorisée : l'action doit venir de tour-de-controle.html en localhost."
+    });
+    return false;
+  }
+  return true;
+}
+
+// ── ROUTES SYNC-PRIX (définies ci-dessous) ──
+
+// GET /preview — AUCUNE écriture : tarifs en --dry-run + contenu en --preview.
+app.get('/api/control-tower/sync-prix/preview', async (req, res) => {
+  if (!gardeSynchro(req, res)) return;
+  try {
+    const rTarifs = await spawnNode(SYNC_TARIFS_SCRIPT, ['--dry-run'], null);
+    const rContenu = await spawnNode(SYNC_CONTENU_SCRIPT, ['--preview'], null);
+    reponseMasquee(res, 200, {
+      ok: rTarifs.code === 0 && rContenu.code === 0,
+      etape: 'preview',
+      tarifs: {
+        code: rTarifs.code,
+        changements: rTarifs.stdout.includes('CHANGEMENTS DÉTECTÉS'),
+        logs: rTarifs.logs
+      },
+      contenu: {
+        code: rContenu.code,
+        logs: rContenu.logs
+      },
+      logs: [...rTarifs.logs, ...rContenu.logs]
+    });
+  } catch (err) {
+    reponseMasquee(res, 500, { ok: false, etape: 'preview', error: masquerSecrets(err.message) });
+  }
+});
+
+// POST /run — (a) tarifs → HTML, (b) contenu.js --apply. Backups avant chaque
+// étape ; échec (a) → rollback HTML + (b) non lancé ; échec (b) → rollback contenu.js.
+app.post('/api/control-tower/sync-prix/run', async (req, res) => {
+  if (!gardeSynchro(req, res)) return;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const dirRun = path.join(SYNC_BACKUP_DIR, stamp);
+  const backups = [];
+  const rel = (p) => path.relative(ROOT_DIR, p).replace(/\\/g, '/');
+  let backupHtml = null;
+  let backupContenu = null;
+  try {
+    fs.mkdirSync(dirRun, { recursive: true });
+
+    // ── Backup AVANT l'étape (a) ──
+    if (fs.existsSync(SYNC_HTML_UNIFIE)) {
+      backupHtml = path.join(dirRun, 'Registre-Tarifs-2026-09-14-Unifie.html');
+      fs.copyFileSync(SYNC_HTML_UNIFIE, backupHtml);
+      backups.push(rel(backupHtml));
+    }
+
+    // ── ÉTAPE (a) : synchro_tarifs_unifie.mjs ──
+    const rTarifs = await spawnNode(SYNC_TARIFS_SCRIPT, [], null);
+    const logsTarifs = ['[run] ▶ ÉTAPE a — synchro_tarifs_unifie.mjs'].concat(rTarifs.logs);
+    if (rTarifs.code !== 0) {
+      const lignes = logsTarifs.concat(['[run] ❌ ÉTAPE a échouée (code ' + rTarifs.code + ') — rollback HTML']);
+      if (backupHtml) {
+        fs.copyFileSync(backupHtml, SYNC_HTML_UNIFIE);
+        lignes.push('[run] ↩ HTML restauré depuis ' + rel(backupHtml));
+      }
+      lignes.push('[run] ⛔ ÉTAPE b NON lancée (abort propre)');
+      journaliserSynchro({ date: new Date().toISOString(), ok: false, etape: 'tarifs', backups, logs: lignes.slice(-120) });
+      return reponseMasquee(res, 200, {
+        ok: false,
+        etape: 'tarifs',
+        code: rTarifs.code,
+        backups,
+        logs: lignes,
+        restaure: backupHtml ? rel(backupHtml) : null,
+        message: 'Échec étape tarifs : HTML restauré, contenu.js non touché.'
+      });
+    }
+    const logsApresTarifs = logsTarifs.concat(['[run] ✔ ÉTAPE a terminée']);
+
+    // ── Backup AVANT l'étape (b) ──
+    if (fs.existsSync(SYNC_CONTENU_JS)) {
+      backupContenu = path.join(dirRun, 'contenu.js');
+      fs.copyFileSync(SYNC_CONTENU_JS, backupContenu);
+      backups.push(rel(backupContenu));
+    }
+
+    // ── ÉTAPE (b) : synchro_contenu_images.mjs --apply ──
+    const rContenu = await spawnNode(SYNC_CONTENU_SCRIPT, ['--apply'], null);
+    const logsContenu = logsApresTarifs
+      .concat(['[run] ▶ ÉTAPE b — synchro_contenu_images.mjs --apply'])
+      .concat(rContenu.logs);
+    if (rContenu.code !== 0) {
+      const lignes = logsContenu.concat(['[run] ❌ ÉTAPE b échouée (code ' + rContenu.code + ') — rollback contenu.js']);
+      if (backupContenu) {
+        fs.copyFileSync(backupContenu, SYNC_CONTENU_JS);
+        lignes.push('[run] ↩ contenu.js restauré depuis ' + rel(backupContenu));
+      }
+      journaliserSynchro({ date: new Date().toISOString(), ok: false, etape: 'contenu', backups, logs: lignes.slice(-120) });
+      return reponseMasquee(res, 200, {
+        ok: false,
+        etape: 'contenu',
+        code: rContenu.code,
+        backups,
+        logs: lignes,
+        restaure: backupContenu ? rel(backupContenu) : null,
+        message: 'Échec étape contenu : contenu.js restauré (le HTML tarifs reste à jour).'
+      });
+    }
+
+    const lignesFin = logsContenu.concat(['[run] ✔ ÉTAPE b terminée', '[run] ✅ Synchro complète (tarifs → HTML → contenu.js)']);
+    journaliserSynchro({ date: new Date().toISOString(), ok: true, etape: 'complete', backups, logs: lignesFin.slice(-120) });
+    return reponseMasquee(res, 200, {
+      ok: true,
+      etape: 'complete',
+      backups,
+      logs: lignesFin,
+      message: 'Prix synchronisés : tarifs.json → registre HTML + contenu.js.'
+    });
+  } catch (err) {
+    journaliserSynchro({ date: new Date().toISOString(), ok: false, etape: 'exception', backups, logs: ['[run] ⚠ ' + masquerSecrets(err.message)] });
+    return reponseMasquee(res, 500, { ok: false, etape: 'exception', error: masquerSecrets(err.message), backups });
   }
 });
 
