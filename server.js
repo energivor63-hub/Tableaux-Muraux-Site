@@ -792,6 +792,23 @@ const SYNC_CONTENU_JS = path.join(SITE_DIR, 'contenu.js');
 const SYNC_BACKUP_DIR = path.join(ROOT_DIR, 'sauvegardes', 'sync-prix');
 const SYNC_JOURNAL_JSON = path.join(ROOT_DIR, 'journaux', 'sync-prix-journal.json');
 
+/** Lecture des 5 taux v7 — garde de version (v6 détecté → erreur claire). */
+function lireTauxV7() {
+  const chemin = path.join(ROOT_DIR, 'tarifs.json');
+  const t = JSON.parse(fs.readFileSync(chemin, 'utf-8'));
+  if (t.version === 'v6') throw new Error('tarifs.json v6 détecté, attendu v7');
+  if (t.version !== 'v7') throw new Error('tarifs.json : version inattendue « ' + (t.version || '(absente)') + ' », attendu v7');
+  const tmp = t.taux_matieres_premieres || {};
+  return {
+    bache_m2: tmp.bache_m2,
+    canvas_m2: tmp.canvas_m2,
+    cadre_pin_ml: tmp.cadre_pin_ml,
+    cadre_hetre_ml: tmp.cadre_hetre_ml,
+    cadre_chene_ml: tmp.cadre_chene_ml,
+    affichage: 'Taux actuels : Bâche ' + tmp.bache_m2 + ' MAD/m² · Canvas ' + tmp.canvas_m2 + ' MAD/m² · Pin ' + tmp.cadre_pin_ml + ' MAD/ml · Hêtre ' + tmp.cadre_hetre_ml + ' MAD/ml · Chêne ' + tmp.cadre_chene_ml + ' MAD/ml'
+  };
+}
+
 /** Journal synchro (JSON local) — entrées déjà masquées, jamais de secret. */
 function journaliserSynchro(entree) {
   try {
@@ -869,12 +886,19 @@ function gardeSynchro(req, res) {
 // GET /preview — AUCUNE écriture : tarifs en --dry-run + contenu en --preview.
 app.get('/api/control-tower/sync-prix/preview', async (req, res) => {
   if (!gardeSynchro(req, res)) return;
+  let taux;
+  try {
+    taux = lireTauxV7();
+  } catch (err) {
+    return reponseMasquee(res, 409, { ok: false, etape: 'preview', error: masquerSecrets(err.message) });
+  }
   try {
     const rTarifs = await spawnNode(SYNC_TARIFS_SCRIPT, ['--dry-run'], null);
     const rContenu = await spawnNode(SYNC_CONTENU_SCRIPT, ['--preview'], null);
     reponseMasquee(res, 200, {
       ok: rTarifs.code === 0 && rContenu.code === 0,
       etape: 'preview',
+      taux,
       tarifs: {
         code: rTarifs.code,
         changements: rTarifs.stdout.includes('CHANGEMENTS DÉTECTÉS'),
