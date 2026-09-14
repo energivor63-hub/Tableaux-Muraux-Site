@@ -1579,3 +1579,153 @@ export function commitAndPushSite(message, files) {
   }
   return results;
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 💰 SYNCHRO PRIX — exécution cloisonnée des scripts registre/*.mjs
+// (ajout Tour de Contrôle v2 : bouton « ⚡ Mise à jour des prix »)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 🔒 Masque TOUTE clé Groq (gsk_xxxxx…) et le jeton TOWER_SYNC_TOKEN dans un
+ * texte destiné à un log, un journal ou une réponse HTTP.
+ * Règle d'or : « gsk_*** » — jamais la clé réelle.
+ */
+export function masquerSecrets(texte) {
+  let s = String(texte === undefined || texte === null ? '' : texte);
+  s = s.replace(/gsk_[A-Za-z0-9]+/g, 'gsk_***');
+  const tower = String(process.env.TOWER_SYNC_TOKEN || '');
+  if (tower.length >= 8) {
+    s = s.split(tower).join('TOWER_***');
+  }
+  return s;
+}
+
+/**
+ * 🧱 Liste blanche d'environnement transmise aux scripts de synchro.
+ * Seules PATH, SystemRoot (Windows) et NODE_PATH sortent du process :
+ * GROQ_* (ni aucune autre clé du .env) n'est JAMAIS transmis → la synchro
+ * est 100 % indépendante de Groq, même sans clé ou avec une clé invalide.
+ */
+export function environnementSynchro() {
+  const env = {};
+  if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+  const sysRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
+  if (sysRoot !== undefined) {
+    env.SystemRoot = sysRoot;   // casse native Windows
+    env.SYSTEMROOT = sysRoot;   // casse demandée par la spec
+  }
+  if (process.env.NODE_PATH !== undefined) env.NODE_PATH = process.env.NODE_PATH;
+  return env;
+}
+
+/**
+ * 🚀 spawnNode(script, args, onLog) — exécute un script Node avec l'env filtré.
+ *
+ *   - scriptPath : chemin absolu (ou relatif à ROOT_DIR) du script .mjs ;
+ *   - args       : arguments CLI passés au script ;
+ *   - onLog      : callback (ligneMasquée) appelé en streaming ligne par ligne ;
+ *   - timeoutMs  : garde-fou 60 000 ms par défaut → kill forcé, code 124.
+ *
+ * Résolve TOUJOURS (ne rejette jamais) : { code, stdout, stderr, logs, timeout? }
+ * stdout/stderr/logs sont systématiquement passés par masquerSecrets().
+ */
+export function spawnNode(scriptPath, args = [], onLog = null, timeoutMs = 60000) {
+  return new Promise((resolve) => {
+    const abs = path.isAbsolute(String(scriptPath))
+      ? String(scriptPath)
+      : path.join(ROOT_DIR, String(scriptPath));
+    const logs = [];
+    let stdoutTampon = '';
+    let stderrTampon = '';
+    let stdoutBrut = '';
+    let stderrBrut = '';
+    let termine = false;
+
+    let child;
+    try {
+      child = spawn(process.execPath, [abs, ...args.map(String)], {
+        cwd: ROOT_DIR,
+        env: environnementSynchro(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      });
+    } catch (err) {
+      return resolve({
+        code: -1,
+        stdout: '',
+        stderr: masquerSecrets('Erreur spawn : ' + err.message),
+        logs: ['[engine] ⚠ Erreur spawn : ' + masquerSecrets(err.message)],
+        error: err.message
+      });
+    }
+
+    const pousserLigne = (canal, ligne) => {
+      const masquee = masquerSecrets(ligne);
+      const etiquetee = '[' + canal + '] ' + masquee;
+      logs.push(etiquetee);
+      if (typeof onLog === 'function') {
+        try { onLog(etiquetee); } catch (e) { /* jamais bloquer le flux */ }
+      }
+    };
+
+    const traiterFlux = (canal) => (data) => {
+      const brut = data.toString('utf8');
+      if (canal === 'stdout') { stdoutBrut += brut; } else { stderrBrut += brut; }
+      const tampon = (canal === 'stdout' ? stdoutTampon : stderrTampon) + brut;
+      const lignes = tampon.split(/\r?\n/);
+      const reste = lignes.pop();
+      if (canal === 'stdout') { stdoutTampon = reste; } else { stderrTampon = reste; }
+      lignes.forEach((l) => pousserLigne(canal, l));
+    };
+
+    const viderTampons = () => {
+      if (stdoutTampon) { pousserLigne('stdout', stdoutTampon); stdoutTampon = ''; }
+      if (stderrTampon) { pousserLigne('stderr', stderrTampon); stderrTampon = ''; }
+    };
+
+    const timer = setTimeout(() => {
+      if (termine) return;
+      termine = true;
+      try { child.kill('SIGKILL'); } catch (e) { /* déjà mort */ }
+      viderTampons();
+      pousserLigne('engine', '⏱ TIMEOUT ' + timeoutMs + ' ms — processus interrompu (kill)');
+      resolve({
+        code: 124,
+        stdout: masquerSecrets(stdoutBrut),
+        stderr: masquerSecrets(stderrBrut + '\n[engine] ⏱ TIMEOUT ' + timeoutMs + ' ms'),
+        logs,
+        timeout: true
+      });
+    }, timeoutMs);
+
+    child.stdout.on('data', traiterFlux('stdout'));
+    child.stderr.on('data', traiterFlux('stderr'));
+
+    child.on('error', (err) => {
+      if (termine) return;
+      termine = true;
+      clearTimeout(timer);
+      pousserLigne('engine', '⚠ Erreur spawn : ' + err.message);
+      resolve({
+        code: -1,
+        stdout: masquerSecrets(stdoutBrut),
+        stderr: masquerSecrets(stderrBrut + '\n[engine] ' + err.message),
+        logs,
+        error: err.message
+      });
+    });
+
+    child.on('close', (code) => {
+      if (termine) return;
+      termine = true;
+      clearTimeout(timer);
+      viderTampons();
+      resolve({
+        code: code === null ? -1 : code,
+        stdout: masquerSecrets(stdoutBrut),
+        stderr: masquerSecrets(stderrBrut),
+        logs
+      });
+    });
+  });
+}
