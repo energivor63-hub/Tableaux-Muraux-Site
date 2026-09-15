@@ -524,11 +524,10 @@ const CONTENU_SITE = {
       imageFallback: "🎨",
       prix: "À partir de 190 MAD",
       badge: null,
-      materiauRecommande: "Toile Canvas",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Cadre Américain",
-      panneaux: 1,
       couleurs: ["Terracotta", "Beige", "Brun", "Bleu", "Doré"],
-      ambiance: "Chaleureuse, raffinée"
+      ambiance: "Chaleureuse, raffinée",
     },
     {
       nom: "Patio aux Mille Couleurs",
