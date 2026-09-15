@@ -33,6 +33,8 @@ import {
   commitAndPushSite
 } from './control-tower-engine.js';
 import { handlePinterestPublish } from './buffer-pinterest.js';
+// 🛡️ Phase B — variantes par réseau + hash anti-doublon (légendes distinctes IG/FB/PIN)
+import { genererVariantes, titrePinterest, hashContenu } from './social-variants.js';
 // 💰 Synchro prix (ajout v2) — import ADDITIF : aucune fonction existante retouchée.
 import { spawnNode, masquerSecrets } from './control-tower-engine.js';
 import crypto from 'crypto';
@@ -548,6 +550,320 @@ app.post('/api/control-tower/update-product', async (req, res) => {
 // ==========================================
 
 // Chemins des journaux Social Studio
+// ==========================================
+// 🛡️ PHASE B — DURCISSEMENT COMPOSEUR POST
+// variantes par réseau · anti-doublon 24 h · média public · Composio réel journalisé
+// ==========================================
+const PUBLIC_MEDIA_BASE = 'https://energivor63-hub.github.io/Tableaux-Muraux-Site/';
+const ANTI_DOUBLON_MS = 24 * 60 * 60 * 1000; // refus du renvoi vers le MÊME réseau sous 24 h (sauf Forcer)
+const COMPOSIO_BASE = String(process.env.COMPOSIO_API_BASE || 'https://backend.composio.dev/api/v3').replace(/\/+$/, '');
+const COMPOSIO_SLUGS = {
+  facebook: ['FACEBOOK_CREATE_PHOTO_POST_PAGE', 'FACEBOOK_CREATE_PHOTO_POST', 'FACEBOOK_CREATE_POST'],
+  instagram: ['INSTAGRAM_CREATE_POST', 'INSTAGRAM_CREATE_IMAGE_POST', 'INSTAGRAM_CREATE_MEDIA_CONTAINER']
+};
+const INTEGRATEUR_RESEAU = { facebook: 'composio', instagram: 'composio', pinterest: 'buffer' };
+const LABEL_RESEAU = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest' };
+
+/** Masque toute clé/secrets avant journalisation (jamais de secret dans journal_integrations.json). */
+function masquerTexte(texte) {
+  let t = String(texte === undefined || texte === null ? '' : texte);
+  t = t.replace(/\b(?:ak|sk|gsk|pk)_[A-Za-z0-9_-]{4,}/g, (m) => m.slice(0, 3) + '***');
+  t = t.replace(/Bearer\s+[A-Za-z0-9._-]+/g, 'Bearer ***');
+  ['COMPOSIO_API_KEY', 'BUFFER_API_KEY', 'TOWER_SYNC_TOKEN', 'GROQ_API_KEY'].forEach((k) => {
+    const v = String(process.env[k] || '');
+    if (v.length >= 6) t = t.split(v).join(k + '_***');
+  });
+  return t;
+}
+
+/** Journal OBLIGATOIRE (journal_integrations.json) : entrée horodatée en tête du tableau. */
+function journaliserIntegration(entree) {
+  try {
+    const chemin = path.join(ROOT_DIR, 'journal_integrations.json');
+    let hist = [];
+    try { hist = JSON.parse(fs.readFileSync(chemin, 'utf-8')); } catch (e) { hist = []; }
+    if (!Array.isArray(hist)) hist = [];
+    hist.unshift({ ...entree, date: new Date().toLocaleString('fr-FR'), isoDate: new Date().toISOString() });
+    fs.writeFileSync(chemin, JSON.stringify(hist, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[social] journal_integrations.json non écrit :', e.message);
+  }
+}
+
+/** « produit-9 » depuis une URL image (…/images/produit-9.jpg) ou un chemin de fiche. */
+function nomProduitDepuisUrl(url) {
+  const m = String(url || '').match(/produit-0*(\d+)\.(?:jpe?g|png|webp)/i);
+  return m ? `produit-${Number(m[1])}` : null;
+}
+
+/** Fiche par nom d'image produit-N, rang (#N) ou nom d'œuvre. */
+function trouverFiche(critere) {
+  const catalog = getCurrentCatalog();
+  if (!critere) return { fiche: null, catalog };
+  const c = String(critere).trim().toLowerCase();
+  const base = c.replace(/^.*[\\\/]/, '').replace(/\.(jpe?g|png|webp)$/i, '');
+  const num = base.match(/produit-0*(\d+)$/);
+  const fiche = catalog.find((f) => {
+    const imgBase = String(f.image || '').replace(/^.*[\\\/]/, '').replace(/\.(jpe?g|png|webp)$/i, '').toLowerCase();
+    if (num && imgBase === 'produit-' + Number(num[1])) return true;
+    if (imgBase === base) return true;
+    return String(f.nom || '').toLowerCase() === c;
+  }) || null;
+  return { fiche, catalog };
+}
+
+/** URL média : JAMAIS localhost — refus explicite + fetch de vérification (→ 200). */
+async function verifierMediaPublic(mediaUrl, fiche) {
+  const url = String(mediaUrl || '').trim();
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(url);
+  if (local) {
+    return { ok: false, url, erreur: 'URL média locale interdite (localhost) — envoi annulé. URL publique attendue : ' + PUBLIC_MEDIA_BASE + 'images/produit-N.jpg' };
+  }
+  if (!url) {
+    const nom = fiche && nomProduitDepuisUrl(fiche.image);
+    if (!nom) {
+      return { ok: false, url, erreur: 'URL média absente et produit non identifiable — envoi annulé. URL attendue : ' + PUBLIC_MEDIA_BASE + 'images/produit-N.jpg' };
+    }
+    const reconstruite = PUBLIC_MEDIA_BASE + 'images/' + nom + '.jpg';
+    try {
+      const r = await fetch(reconstruite, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+      if (r.status === 200 || r.status === 206) return { ok: true, url: reconstruite, httpStatus: r.status };
+      return { ok: false, url: reconstruite, erreur: `Média public inaccessible (HTTP ${r.status}) : ${reconstruite}` };
+    } catch (e) {
+      return { ok: false, url: reconstruite, erreur: `Média public inaccessible (${e.message}) : ${reconstruite}` };
+    }
+  }
+  if (!/^https:\/\//i.test(url)) {
+    return { ok: false, url, erreur: 'URL média non publique (HTTPS obligatoire) — envoi annulé. URL attendue : ' + PUBLIC_MEDIA_BASE + 'images/produit-N.jpg' };
+  }
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+    if (r.status === 200 || r.status === 206) return { ok: true, url, httpStatus: r.status };
+    return { ok: false, url, erreur: `Média public inaccessible (HTTP ${r.status}) : ${url}` };
+  } catch (e) {
+    return { ok: false, url, erreur: `Média public inaccessible (${e.message}) : ${url}` };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GARDE-FOU ANTI-DOUBLON LOCAL + JOURNALISATION OBLIGATOIRE COMPOSIO
+//   journal_integrations.json (racine) : une entrée par tentative (produit,
+//   réseau, hash du contenu, horodatage, statut HTTP + corps JSON Composio).
+// ─────────────────────────────────────────────────────────────────────────
+const JOURNAL_INTEGRATIONS_PATH = path.join(ROOT_DIR, 'journal_integrations.json');
+
+/** Lecture robuste du journal d'intégrations (jamais d'exception bloquante). */
+function lireJournalIntegrations() {
+  try {
+    const arr = JSON.parse(fs.readFileSync(JOURNAL_INTEGRATIONS_PATH, 'utf-8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Horodatage exploitable d'une entrée (isoDate prioritaire, sinon date FR). */
+function dateEntree(entree) {
+  const iso = Date.parse(entree && entree.isoDate);
+  if (!Number.isNaN(iso)) return iso;
+  const fr = Date.parse(entree && entree.date);
+  return Number.isNaN(fr) ? 0 : fr;
+}
+
+/**
+ * Vrai si l'entrée correspond à un SUCCÈS pour l'un des identifiants produit
+ * fournis (slug « produit-9 », nom d'œuvre, rang…) et ce réseau.
+ * Appariement canonique : le slug ET le nom d'œuvre sont journalisés, donc un
+ * appel avec produitId=slug ou produitNom=nom d'œuvre retrouve bien l'entrée.
+ */
+function entreeSucces(entree, identifiants, reseau) {
+  if (!entree) return false;
+  if (String(entree.reseau || '').toLowerCase() !== String(reseau || '').toLowerCase()) return false;
+  const demandes = (Array.isArray(identifiants) ? identifiants : [identifiants])
+    .filter(Boolean).map((v) => String(v).toLowerCase());
+  const cibles = [entree.produit, entree.produitNom, entree.produitId, entree.produitSlug]
+    .filter(Boolean).map((v) => String(v).toLowerCase());
+  if (!demandes.length) return true; // sans identifiant : garde-fou par réseau seul
+  if (!cibles.some((k) => demandes.includes(k))) return false;
+  return ['succes', 'published', 'reussi', 'success'].includes(String(entree.statut || '').toLowerCase());
+}
+
+/**
+ * GARDE-FOU ANTI-DOUBLON : refuse tout renvoi vers le MÊME réseau sous 24 h.
+ * Seuls les SUCCÈS bloquent (un échec peut toujours être réessayé).
+ * `identifiants` = tableau (slug produit-N, nom d'œuvre, rang…).
+ * Retourne { bloque, message, heures, derniere }.
+ */
+function verifierAntiDoublon(identifiants, reseau, forcer) {
+  const recentes = lireJournalIntegrations()
+    .filter((e) => entreeSucces(e, identifiants, reseau))
+    .sort((a, b) => dateEntree(b) - dateEntree(a));
+  const derniere = recentes[0] || null;
+  if (!derniere || forcer) return { bloque: false, derniere };
+  const age = Date.now() - dateEntree(derniere);
+  if (age > ANTI_DOUBLON_MS) return { bloque: false, derniere };
+  const heures = Math.max(1, Math.round(age / 3600000));
+  return {
+    bloque: true,
+    heures,
+    derniere,
+    message: `${LABEL_RESEAU[reseau] || reseau} déjà publié il y a ${heures} h — cochez « Forcer » pour republier.`
+  };
+}
+
+/** Corps de réponse masqué + parsé (jamais de secret dans le journal). */
+function corpsMasque(corps) {
+  const brut = masquerTexte(JSON.stringify(corps === undefined ? null : corps));
+  try { return JSON.parse(brut); } catch (e) { return { brut }; }
+}
+
+/** Message lisible extrait d'une réponse Composio (error/message imbriqués). */
+function extraireMessageComposio(corps) {
+  if (!corps || typeof corps !== 'object') return String(corps || '');
+  const candidats = [
+    corps.error && corps.error.message, corps.error, corps.message,
+    corps.data && corps.data.error && corps.data.error.message,
+    corps.data && corps.data.error, corps.data && corps.data.message,
+    corps.brut
+  ];
+  const trouve = candidats.find((c) => typeof c === 'string' && c.trim());
+  return trouve ? String(trouve).slice(0, 600) : '';
+}
+
+/** Cause lisible d'un échec Composio (token, scopes, IG non business, média…). */
+function causeComposio(httpStatus, corps, message) {
+  const txt = [message, JSON.stringify(corps === undefined ? '' : corps)].join(' ').toLowerCase();
+  // Cause EXACTE remontée en production (clé sans droit d'exécution d'outil)
+  if (/tool_execution|does not have the permissions|insufficientpermissions/.test(txt)) {
+    return "La clé COMPOSIO_API_KEY n'a pas la permission « tool_execution » (write) : activez-la sur app.composio.dev → API Keys, ou utilisez une clé qui l'a.";
+  }
+  if (httpStatus === 401 || /invalid api key|unauthori[sz]ed|authentication/.test(txt)) {
+    return 'Clé COMPOSIO_API_KEY invalide ou expirée (HTTP 401) — régénérez-la sur app.composio.dev.';
+  }
+  if (httpStatus === 403 || /scope|permission|forbidden|not authorized/.test(txt)) {
+    return 'Permissions/scopes insuffisants sur le compte connecté Composio (HTTP 403) — reconnectez Facebook/Instagram avec les droits de publication.';
+  }
+  if (/business|professional|creator account/.test(txt)) {
+    return 'Compte Instagram non « business » : Composio ne peut publier que sur un compte professionnel relié à une page Facebook.';
+  }
+  if (/download|fetch|image|media|url|inaccessible/.test(txt)) {
+    return "URL média inaccessible depuis les serveurs Composio (image non téléchargeable) — vérifiez l'URL publique GitHub Pages.";
+  }
+  if (httpStatus === 429) return 'Limite de débit Composio atteinte (HTTP 429) — réessayez dans quelques minutes.';
+  if (httpStatus >= 500) return `Erreur côté Composio (HTTP ${httpStatus}) — incident serveur, réessayez plus tard.`;
+  if (httpStatus === 404) return "Action Composio introuvable (HTTP 404) — slug d'action indisponible pour ce compte connecté.";
+  if (message) return message;
+  return `Échec Composio${httpStatus ? ` (HTTP ${httpStatus})` : ''}.`;
+}
+
+/** Arguments de l'action Composio selon le réseau (champs vides supprimés). */
+function argumentsComposio(reseau, { texte, mediaUrl, lien, alt }) {
+  const connecte = reseau === 'facebook'
+    ? process.env.FACEBOOK_CONNECTED_ACCOUNT_ID
+    : process.env.INSTAGRAM_CONNECTED_ACCOUNT_ID;
+  if (reseau === 'facebook') {
+    return {
+      connected_account_id: connecte,
+      page_id: process.env.FACEBOOK_PAGE_ID,
+      url: mediaUrl,
+      caption: texte,
+      link: lien,
+      alt_text: alt
+    };
+  }
+  return {
+    connected_account_id: connecte,
+    instagram_account_id: process.env.INSTAGRAM_USER_ID,
+    image_url: mediaUrl,
+    caption: texte,
+    alt_text: alt
+  };
+}
+
+/** Appel Composio v3 (une action) — TOUTE réponse est renvoyée pour journalisation. */
+async function appelerComposio(slug, args) {
+  const url = `${COMPOSIO_BASE}/tools/execute/${slug}`;
+  const requete = {};
+  Object.keys(args || {}).forEach((k) => {
+    const v = args[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') requete[k] = v;
+  });
+  const controleur = new AbortController();
+  const minuteur = setTimeout(() => controleur.abort(), 30000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'x-api-key': String(process.env.COMPOSIO_API_KEY || ''), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: String(process.env.COMPOSIO_USER_ID || process.env.USER_ID || 'default'),
+        arguments: requete
+      }),
+      signal: controleur.signal
+    });
+    const texte = await res.text();
+    let corps = null;
+    try { corps = JSON.parse(texte); } catch (e) { corps = { brut: String(texte).slice(0, 1500) }; }
+    return { endpoint: url, httpStatus: res.status, corps, requete };
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
+/** Succès réel d'une exécution Composio (HTTP 2xx ET corps sans erreur). */
+function composioEstSucces(reponse) {
+  const http = reponse.httpStatus;
+  if (!(http >= 200 && http < 300)) return false;
+  const c = reponse.corps || {};
+  if (c.successful === false || c.success === false || c.error) return false;
+  if (c.data && (c.data.successful === false || c.data.error)) return false;
+  return true;
+}
+
+/**
+ * Publication via Composio (Facebook / Instagram) — essaie les slugs connus,
+ * JOURNALISE CHAQUE RÉPONSE (statut HTTP + corps JSON + message) dans
+ * journal_integrations.json, et renvoie une cause LISIBLE en cas d'échec.
+ */
+async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl, lien, alt }) {
+  const slugs = COMPOSIO_SLUGS[reseau] || [];
+  const args = argumentsComposio(reseau, { texte, mediaUrl, lien, alt });
+  let dernier = null;
+  for (const slug of slugs) {
+    let reponse;
+    try {
+      reponse = await appelerComposio(slug, args);
+    } catch (e) {
+      reponse = { endpoint: `${COMPOSIO_BASE}/tools/execute/${slug}`, httpStatus: 0, corps: { erreur: e.message }, requete: args };
+    }
+    const ok = composioEstSucces(reponse);
+    const messageBrut = extraireMessageComposio(reponse.corps);
+    const cause = ok ? null : causeComposio(reponse.httpStatus, reponse.corps, messageBrut);
+    // 📓 JOURNALISATION OBLIGATOIRE de toute réponse Composio (statut HTTP + corps JSON + message)
+    journaliserIntegration({
+      type: 'publication',
+      integrateur: 'composio',
+      reseau: LABEL_RESEAU[reseau] || reseau,
+      produit,
+      produitNom,
+      action: slug,
+      endpoint: reponse.endpoint,
+      statut: ok ? 'succes' : 'echec',
+      httpStatus: reponse.httpStatus,
+      corps: corpsMasque(reponse.corps),
+      message: messageBrut,
+      cause,
+      mediaUrl,
+      hashContenu: hashContenu(texte),
+      contenu: texte
+    });
+    if (ok) {
+      return { ok: true, slug, httpStatus: reponse.httpStatus, corps: reponse.corps, endpoint: reponse.endpoint };
+    }
+    dernier = { ok: false, slug, httpStatus: reponse.httpStatus, corps: reponse.corps, cause, message: messageBrut, endpoint: reponse.endpoint };
+  }
+  return dernier || { ok: false, httpStatus: 0, cause: 'Aucune action Composio configurée pour ce réseau.', corps: null };
+}
+
 const SOCIAL_JOURNAL_DIR = path.join(ROOT_DIR, 'dashboard', 'journaux');
 const SOCIAL_JOURNAL_PATH = path.join(SOCIAL_JOURNAL_DIR, 'social-journal.json');
 const SOCIAL_DRAFTS_PATH = path.join(SOCIAL_JOURNAL_DIR, 'social-drafts.json');
@@ -567,112 +883,351 @@ app.get('/dashboard.html', (req, res) => {
   }
 });
 
-// Publication multi-plateformes (Composio pour FB/IG, Buffer pour Pinterest)
+// ─────────────────────────────────────────────────────────────────────────
+// PUBLICATION MULTI-RÉSEAUX DURCIE (Phase B)
+//   • 1 variante de légende PAR RÉSEAU (jamais de contenu strictement identique)
+//   • garde-fou anti-doublon 24 h par réseau (sauf case « Forcer »)
+//   • erreurs SÉPARÉES par intégrateur (bloc Buffer ≠ bloc Composio)
+//   • TOUTE réponse Composio journalisée (journal_integrations.json)
+//   • URLs média publiques GitHub Pages uniquement (fetch → 200 vérifié)
 // SESSION 10 : Pinterest est publié UNIQUEMENT dans le board officiel
 // « Nos meilleures œuvres — art mural marocain » (voir site-web/buffer-pinterest.js).
-// Board introuvable => erreur explicite (journal + toast dashboard) ; JAMAIS de
-// publication d'épingle sans board cible. Routage Composio (FB/IG) inchangé.
-app.post('/api/social/publish', async (req, res) => {
-  try {
-    const body = req.body || {};
-    const mediaUrl = body.mediaUrl;
-    const scheduleDate = body.scheduleDate;
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Texte du dashboard pour un réseau ('' si l'utilisateur n'a rien saisi). */
+function texteDashboardPour(copies, reseau) {
+  const c = (copies && copies[reseau]) || {};
+  if (reseau === 'instagram') {
+    return [c.caption, c.hashtags].filter((v) => v && String(v).trim()).join('\n\n').trim();
+  }
+  if (reseau === 'facebook') return String(c.text || '').trim();
+  return [c.title, c.description].filter((v) => v && String(v).trim()).join('\n').trim();
+}
+
+/**
+ * 3 légendes GARANTIES DISTINCTES pour les réseaux demandés.
+ * Le texte saisi dans le dashboard prime ; sinon la variante générée depuis la
+ * fiche (social-variants.js). Deux réseaux ne peuvent JAMAIS partir avec un
+ * texte strictement identique (anti-doublon Buffer).
+ */
+function resoudreTextesParReseau(plateformes, copies, fiche) {
+  const variantes = genererVariantes(fiche || {});
+  const textes = {};
+  const origine = {};
+  plateformes.forEach((p) => {
+    const saisi = texteDashboardPour(copies, p);
+    textes[p] = saisi || variantes[p] || '';
+    origine[p] = saisi ? 'dashboard' : 'variante-auto';
+  });
+  // Invariant : jamais deux réseaux avec un texte strictement identique
+  const vus = new Map();
+  plateformes.forEach((p) => {
+    if (vus.has(textes[p])) {
+      textes[p] = variantes[p] || (textes[p] + ' #' + p);
+      origine[p] = 'variante-auto(anti-doublon)';
+    }
+    vus.set(textes[p], p);
+  });
+  return { textes, origine, variantes };
+}
+/**
+ * CŒUR DE PUBLICATION (utilisé par /api/social/publish ET
+ * /api/social/retry-failed). Renvoie toujours un objet sérialisable :
+ * { success, error, errors, erreursParIntegrateur, resultats, reseauxPublies,
+ *   reseauxEchoues, postUrls, variantes, textesEnvoyes }
+ */
+async function executerPublication(body, ciblesForcees) {
+    const mediaUrlDemande = body.mediaUrl;
+    const scheduleDate = body.scheduleDate || null;
     // Payload dashboard (« plateformes » + « copies ») ou legacy (« platform » + « content »)
-    const platforms = Array.isArray(body.plateformes) && body.plateformes.length > 0
-      ? body.plateformes
-      : (body.platform ? [body.platform] : []);
+    const platforms = (Array.isArray(ciblesForcees) && ciblesForcees.length)
+      ? ciblesForcees
+      : (Array.isArray(body.plateformes) && body.plateformes.length > 0
+        ? body.plateformes
+        : (body.platform ? [body.platform] : []));
     if (!platforms.length) {
-      return res.json({ success: false, error: 'Aucune plateforme cible dans la requête' });
+      return { success: false, error: 'Aucune plateforme cible dans la requête', resultats: [], reseauxPublies: [], reseauxEchoues: [] };
+    }
+    const forcer = body.forcer === true || body.forcerRepublication === true;
+
+    // 1 ─ Fiche produit + variantes DISTINCTES par réseau
+    const critere = body.produitId || body.produitNom || nomProduitDepuisUrl(mediaUrlDemande) || null;
+    const { fiche } = trouverFiche(critere);
+    // Identifiants canoniques du produit (slug + nom d'œuvre) : le garde-fou
+    // retrouve une entrée quel que soit l'identifiant envoyé par le dashboard.
+    const produitCles = [...new Set([body.produitId, body.produitNom,
+      nomProduitDepuisUrl(mediaUrlDemande), fiche && fiche.nom,
+      fiche && nomProduitDepuisUrl(fiche.image), critere].filter(Boolean).map(String))];
+    const produit = nomProduitDepuisUrl(mediaUrlDemande)
+      || (fiche && nomProduitDepuisUrl(fiche.image))
+      || (produitCles[0] || 'inconnu');
+    const produitNom = (fiche && fiche.nom) || body.produitNom || null;
+    const { textes, origine, variantes } = resoudreTextesParReseau(platforms, body.copies, fiche);
+
+    // 2 ─ Média : URL PUBLIQUE GitHub Pages vérifiée (fetch → 200) AVANT envoi
+    const verifMedia = await verifierMediaPublic(mediaUrlDemande, fiche);
+    if (!verifMedia.ok) {
+      journaliserIntegration({
+        type: 'pre-vol', integrateur: 'media', reseau: 'tous', produit,
+        statut: 'echec', erreur: verifMedia.erreur, mediaUrl: mediaUrlDemande,
+        cause: 'URL média non publique ou inaccessible (localhost interdit)'
+      });
+      return {
+        success: false, error: verifMedia.erreur,
+        erreursParIntegrateur: [], resultats: [],
+        reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes
+      };
+    }
+    const mediaUrl = verifMedia.url;
+
+    // 3 ─ Pré-vérification des clés (journalisée, puis échec rapide)
+    const manquantes = [];
+    if (platforms.some((p) => p === 'facebook' || p === 'instagram') && !process.env.COMPOSIO_API_KEY) manquantes.push('COMPOSIO_API_KEY');
+    if (platforms.includes('pinterest') && !process.env.BUFFER_API_KEY) manquantes.push('BUFFER_API_KEY');
+    if (manquantes.length) {
+      journaliserIntegration({
+        type: 'pre-vol', integrateur: 'config', reseau: platforms.join(', '), produit,
+        statut: 'echec', cause: `${manquantes.join(' + ')} manquante(s) dans .env`, mediaUrl
+      });
+      return {
+        success: false, error: `${manquantes.join(' + ')} manquante dans .env`,
+        erreursParIntegrateur: [], resultats: [],
+        reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes
+      };
     }
 
-    // Pré-vérification des clés (comportement d'origine conservé : échec rapide, sans journal)
-    if (platforms.some((p) => p === 'facebook' || p === 'instagram') && !process.env.COMPOSIO_API_KEY) {
-      return res.json({ success: false, error: 'COMPOSIO_API_KEY manquante dans .env' });
-    }
-    if (platforms.includes('pinterest') && !process.env.BUFFER_API_KEY) {
-      return res.json({ success: false, error: 'BUFFER_API_KEY manquante dans .env' });
+    // 4 ─ GARDE-FOU ANTI-DOUBLON (même réseau < 24 h, sauf « Forcer »)
+    const refus = [];
+    platforms.forEach((p) => {
+      const etat = verifierAntiDoublon(produitCles, p, forcer);
+      if (etat.bloque) {
+        refus.push({ reseau: p, message: etat.message, heures: etat.heures, date: (etat.derniere && etat.derniere.date) || null });
+      }
+    });
+    if (refus.length) {
+      journaliserIntegration({
+        type: 'garde-fou', integrateur: 'anti-doublon', reseau: refus.map((r) => r.reseau).join(', '),
+        produit, produitNom, statut: 'refus', message: refus.map((r) => r.message).join(' | '),
+        hashContenu: hashContenu(textes[refus[0].reseau] || ''), mediaUrl
+      });
+      return {
+        success: false, error: refus[0].message, refusDoublon: refus,
+        erreursParIntegrateur: [], resultats: [],
+        reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes, forcer: false
+      };
     }
 
     let journal = [];
     if (fs.existsSync(SOCIAL_JOURNAL_PATH)) {
       journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
     }
-    const results = [];
+    const resultats = [];
     const postUrls = {};
-    const errors = [];
+    const erreursBuffer = [];
+    const erreursComposio = [];
+    const textesEnvoyes = [];
 
     for (const platform of platforms) {
+      const texte = textes[platform] || '';
+      textesEnvoyes.push({ reseau: platform, origine: origine[platform], hashContenu: hashContenu(texte), longueur: texte.length });
+
       if (platform === 'facebook' || platform === 'instagram') {
-        // Composio (Facebook + Instagram) — routage INCHANGÉ
-        results.push({ platform, success: true, message: `Publié via Composio (${platform})` });
+        // ── Composio (Facebook / Instagram) : appel RÉEL + journalisation systématique
+        const copie = ((body.copies || {})[platform]) || {};
+        const rep = await publierViaComposio({
+          reseau: platform, produit, produitNom, texte, mediaUrl,
+          lien: copie.link || '', alt: copie.alt || ''
+        });
+        if (rep.ok) {
+          resultats.push({
+            reseau: platform, integrateur: 'composio', succes: true,
+            action: rep.slug, httpStatus: rep.httpStatus,
+            message: `Publié via Composio (${LABEL_RESEAU[platform]}) — ${rep.slug}`
+          });
+        } else {
+          const message = `Composio (${LABEL_RESEAU[platform]}) : ${rep.cause}`;
+          erreursComposio.push(message);
+          resultats.push({
+            reseau: platform, integrateur: 'composio', succes: false,
+            action: rep.slug, httpStatus: rep.httpStatus,
+            message, cause: rep.cause, corps: rep.corps ? corpsMasque(rep.corps) : null
+          });
+        }
         journal.unshift({
           id: `pub_${Date.now()}_${platform}`,
           date: new Date().toISOString(),
           platform,
-          content: body.content || (body.copies ? body.copies[platform] : undefined),
+          content: texte,
           mediaUrl,
-          status: 'published',
-          scheduleDate
+          status: rep.ok ? 'published' : 'error',
+          scheduleDate,
+          integrateur: 'composio',
+          error: rep.ok ? undefined : rep.cause
         });
       } else if (platform === 'pinterest') {
-        // Buffer (Pinterest) — ciblage OBLIGATOIRE du board officiel
+        // ── Buffer (Pinterest) : board officiel OBLIGATOIRE + variante Pinterest
+        const bodyPin = {
+          ...body,
+          mediaUrl,
+          copies: {
+            ...(body.copies || {}),
+            pinterest: { ...(((body.copies || {}).pinterest) || {}), description: texte }
+          }
+        };
+        let outcome = null;
+        let erreurPin = null;
         try {
-          const outcome = await handlePinterestPublish({ body });
-          results.push({
-            platform,
-            success: true,
+          outcome = await handlePinterestPublish({ body: bodyPin });
+        } catch (pinErr) {
+          erreurPin = pinErr.message;
+        }
+        // 📓 journal intégrations (garde-fou anti-doublon Pinterest)
+        journaliserIntegration({
+          type: 'publication', integrateur: 'buffer', reseau: LABEL_RESEAU.pinterest,
+          produit, produitNom, statut: outcome ? 'succes' : 'echec',
+          httpStatus: outcome ? 200 : null,
+          message: outcome ? `Épingle créée dans le board « ${outcome.board.name} »` : erreurPin,
+          cause: outcome ? null : erreurPin,
+          mediaUrl, hashContenu: hashContenu(texte), contenu: texte,
+          board: outcome ? { id: outcome.board.id, name: outcome.board.name, url: outcome.board.url } : null
+        });
+        if (outcome) {
+          postUrls.pinterest = outcome.boardUrl;
+          resultats.push({
+            reseau: 'pinterest', integrateur: 'buffer', succes: true,
             message: `Publié via Buffer (Pinterest) dans le board « ${outcome.board.name} »`,
             board: outcome.board
           });
-          postUrls.pinterest = outcome.boardUrl;
-          journal.unshift({
-            id: `pub_${Date.now()}_${platform}`,
-            date: new Date().toISOString(),
-            platform,
-            content: body.copies ? body.copies.pinterest : body.content,
-            mediaUrl,
-            status: 'published',
-            scheduleDate,
-            board: {
-              id: outcome.board.id,
-              serviceId: outcome.board.serviceId,
-              name: outcome.board.name,
-              url: outcome.board.url
-            }
-          });
-        } catch (pinErr) {
-          // Board introuvable / erreur Buffer : erreur explicite au journal,
-          // réponse en échec (toast « Tableau Pinterest introuvable » côté
-          // dashboard) et AUCUNE création d'épingle côté Buffer.
-          errors.push(pinErr.message);
-          journal.unshift({
-            id: `pub_${Date.now()}_${platform}`,
-            date: new Date().toISOString(),
-            platform,
-            content: body.copies ? body.copies.pinterest : body.content,
-            mediaUrl,
-            status: 'error',
-            scheduleDate,
-            error: pinErr.message
-          });
+        } else {
+          const message = `Buffer (Pinterest) : ${erreurPin}`;
+          erreursBuffer.push(message);
+          resultats.push({ reseau: 'pinterest', integrateur: 'buffer', succes: false, message, cause: erreurPin });
         }
+        journal.unshift({
+          id: `pub_${Date.now()}_${platform}`,
+          date: new Date().toISOString(),
+          platform,
+          content: texte,
+          mediaUrl,
+          status: outcome ? 'published' : 'error',
+          scheduleDate,
+          integrateur: 'buffer',
+          board: outcome ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url } : undefined,
+          error: outcome ? undefined : erreurPin
+        });
       } else {
-        errors.push(`Plateforme non supportée : ${platform}`);
+        const message = `Plateforme non supportée : ${platform}`;
+        erreursComposio.push(message);
+        resultats.push({ reseau: platform, integrateur: 'inconnu', succes: false, message });
       }
     }
 
     fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
 
-    if (errors.length) {
-      // Le dashboard affiche result.error dans la statusBox + le toast d'échec.
-      return res.json({ success: false, error: errors[0], errors, results });
+    // Erreurs JAMAIS fusionnées : un bloc par intégrateur (Buffer ≠ Composio)
+    const erreursParIntegrateur = [];
+    if (erreursBuffer.length) {
+      erreursParIntegrateur.push({ integrateur: 'buffer', label: 'Buffer (Pinterest)', erreurs: erreursBuffer });
     }
-    res.json({
+    if (erreursComposio.length) {
+      erreursParIntegrateur.push({ integrateur: 'composio', label: 'Composio (Facebook / Instagram)', erreurs: erreursComposio });
+    }
+    const erreursPlates = [...erreursBuffer, ...erreursComposio];
+    const reseauxPublies = resultats.filter((r) => r.succes).map((r) => r.reseau);
+    const reseauxEchoues = resultats.filter((r) => !r.succes).map((r) => r.reseau);
+
+    if (erreursPlates.length) {
+      // error = 1ʳᵉ erreur NON fusionnée : une erreur Composio n'est jamais
+      // masquée par un message Buffer (et inversement).
+      return {
+        success: false,
+        error: erreursPlates[0],
+        errors: erreursPlates,
+        erreursParIntegrateur,
+        resultats, reseauxPublies, reseauxEchoues, postUrls, variantes, textesEnvoyes,
+        produit, produitNom, mediaUrl
+      };
+    }
+    return {
       success: true,
       platform: platforms.join(','),
-      message: `Publié via ${results.map((r) => (r.platform === 'pinterest' ? 'Buffer (board officiel)' : 'Composio')).join(' + ')}`,
-      results,
-      postUrls
+      message: `Publié via ${[...new Set(resultats.map((r) => (r.integrateur === 'buffer' ? 'Buffer (board officiel)' : 'Composio')))].join(' + ')}`,
+      erreursParIntegrateur: [],
+      resultats, reseauxPublies, reseauxEchoues, postUrls, variantes, textesEnvoyes,
+      produit, produitNom, mediaUrl
+    };
+}
+
+// POST /api/social/publish — publication multi-réseaux DURCIE (Phase B)
+app.post('/api/social/publish', async (req, res) => {
+  try {
+    const reponse = await executerPublication(req.body || {}, null);
+    res.json(reponse);
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/social/retry-failed — « Réessayer les réseaux en échec uniquement »
+// Ne renvoie QUE les réseaux en échec : jamais Pinterest s'il a réussi.
+app.post('/api/social/retry-failed', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const produit = body.produitId || body.produitNom || nomProduitDepuisUrl(body.mediaUrl) || null;
+    let reseaux = Array.isArray(body.reseauxEchoues) && body.reseauxEchoues.length ? body.reseauxEchoues : null;
+    if (!reseaux) {
+      // Dérivation depuis journal_integrations.json : dernière tentative de l'œuvre
+      const entrees = lireJournalIntegrations()
+        .filter((e) => e.type === 'publication' && e.produit && produit
+          && String(e.produit).toLowerCase() === String(produit).toLowerCase())
+        .sort((a, b) => dateEntree(b) - dateEntree(a));
+      const derniers = {};
+      entrees.forEach((e) => {
+        const r = String(e.reseau || '').toLowerCase();
+        if (r && derniers[r] === undefined) derniers[r] = String(e.statut || '').toLowerCase();
+      });
+      reseaux = Object.keys(derniers)
+        .filter((r) => !['succes', 'published', 'reussi', 'success'].includes(derniers[r]));
+    }
+    if (!reseaux || !reseaux.length) {
+      return res.json({ success: false, error: 'Aucun réseau en échec à réessayer pour cette œuvre.' });
+    }
+    const reponse = await executerPublication(body, reseaux);
+    // Sécurité : un réseau publié avec succès sous 24 h n'est JAMAIS renvoyé,
+    // même si le dashboard l'a inclus par erreur dans reseauxEchoues.
+    const forcerRetry = body.forcer === true || body.forcerRepublication === true;
+    const dejaPublies = (reponse.refusDoublon || []).map((r) => String(r.reseau || '').toLowerCase());
+    const reseauxEchouesFiltres = (reponse.reseauxEchoues || []).filter((r) => !dejaPublies.includes(String(r).toLowerCase()));
+    const reseauxPubliesFiltres = (reponse.reseauxPublies || []).filter((r) => !dejaPublies.includes(String(r).toLowerCase()));
+    if (dejaPublies.length && !forcerRetry) {
+      reponse.reseauxPublies = reseauxPubliesFiltres;
+      reponse.reseauxEchoues = reseauxEchouesFiltres;
+      reponse.reseauxIgnores = dejaPublies;
+      reponse.message = (reponse.message ? reponse.message + ' ' : '') + 'Réseau(x) déjà publié(s) non renvoyé(s) : ' + dejaPublies.join(', ') + '.';
+    }
+    res.json(reponse);
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/social/variantes?produit=produit-9 — aperçu des 3 légendes DISTINCTES
+app.get('/api/social/variantes', (req, res) => {
+  try {
+    const critere = req.query.produit || req.query.produitId || null;
+    const { fiche } = trouverFiche(critere);
+    const variantes = genererVariantes(fiche || { nom: critere || 'Œuvre unique' });
+    res.json({
+      success: true,
+      produit: critere,
+      fiche: fiche ? { nom: fiche.nom, categorie: fiche.categorie, prix: fiche.prix, image: fiche.image } : null,
+      variantes,
+      hashes: {
+        instagram: hashContenu(variantes.instagram),
+        facebook: hashContenu(variantes.facebook),
+        pinterest: hashContenu(variantes.pinterest)
+      },
+      titrePinterest: titrePinterest(fiche || {})
     });
   } catch (err) {
     res.json({ success: false, error: err.message });
