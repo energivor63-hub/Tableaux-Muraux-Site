@@ -42,7 +42,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000; // ajout : PORT surchargeable (instances de test)
 
 // CORS
 app.use((req, res, next) => {
@@ -466,7 +466,7 @@ app.post('/api/control-tower/update-product', async (req, res) => {
       style: str(uiChamps.style).trim() || oldProduct.style,
       environnement: str(uiChamps.environnement).trim() || oldProduct.environnement,
       prix: str(uiChamps.prix).trim() || oldProduct.prix || 'À partir de 180 MAD',
-      badge: str(uiChamps.badge).trim() || null,
+      badge: str(uiChamps.badge).trim() || oldProduct.badge || null,
       materiauRecommande: str(uiChamps.materiauRecommande).trim() || oldProduct.materiauRecommande,
       montageRecommande: str(uiChamps.montageRecommande).trim() || oldProduct.montageRecommande,
       couleurs: (couleursFournies && couleursFournies.length ? couleursFournies : (oldProduct.couleurs || [])),

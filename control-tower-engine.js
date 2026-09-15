@@ -1285,6 +1285,49 @@ export function createReplacementBackup(productRank) {
 }
 
 /**
+ * 🔗 FUSION — extrait les propriétés de premier niveau { clé: valeur brute }
+ * d'un bloc objet `{ … }` (respecte chaînes quotées et accolades/crochets
+ * imbriqués). Sert à préserver les champs éditoriaux NON gérés par le gabarit
+ * d'édition (ex. `panneaux`) lors d'une réécriture de fiche.
+ */
+function extrairePropsNiveau1(bloc) {
+  const props = [];
+  let depth = 0, propDebut = -1;
+  let inQuote = null;
+  for (let i = 0; i < bloc.length; i++) {
+    const c = bloc[i];
+    if (inQuote) {
+      if (c === '\\') { i++; continue; }
+      if (c === inQuote) inQuote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { inQuote = c; continue; }
+    if (c === '{' || c === '[') { depth++; continue; }
+    if (c === '}' || c === ']') {
+      depth--;
+      if (depth === 0 && propDebut >= 0) {
+        // dernière propriété (sans virgule) juste avant l'accolade fermante
+        const morceau = bloc.slice(propDebut, i);
+        const p = morceau.indexOf(':');
+        if (p > 0) props.push({ cle: morceau.slice(0, p).trim(), brut: morceau.slice(p + 1).trim() });
+        propDebut = -1;
+      }
+      continue;
+    }
+    if (depth === 1) {
+      if (propDebut < 0 && !/\s/.test(c)) propDebut = i;
+      if (c === ',' && propDebut >= 0) {
+        const morceau = bloc.slice(propDebut, i);
+        const p = morceau.indexOf(':');
+        if (p > 0) props.push({ cle: morceau.slice(0, p).trim(), brut: morceau.slice(p + 1).trim() });
+        propDebut = -1;
+      }
+    }
+  }
+  return props;
+}
+
+/**
  * ✍️ Réécriture de la fiche N dans contenu.js (préservation BOM + CRLF),
  * AUCUN décalage : les autres fiches restent littéralement inchangées.
  */
@@ -1322,6 +1365,20 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
   }
   const target = objects[productRank - 1];
 
+  // 🔗 FUSION (correctif régression) : toute propriété de la fiche existante
+  // NON gérée par le gabarit ci-dessous (ex. champ éditorial `panneaux`) est
+  // réinjectée TELLE QUELLE dans la fiche réécrite — l'édition ne peut plus
+  // faire perdre panneaux/matière/montage ni aucun champ futur.
+  const CLES_GABARIT = new Set([
+    'nom', 'description', 'categorie', 'style', 'environnement', 'image',
+    'imageFallback', 'prix', 'badge', 'materiauRecommande',
+    'montageRecommande', 'couleurs', 'ambiance'
+  ]);
+  const blocExistant = bodyStart.slice(target.start, target.end);
+  const propsPreservees = extrairePropsNiveau1(blocExistant)
+    .filter((p) => !CLES_GABARIT.has(p.cle) && p.brut && p.brut !== 'undefined')
+    .map((p) => `      ${p.cle}: ${p.brut},`);
+
   const clean = (val) => String(val ?? '').replace(/"/g, '\\"').replace(/\r?\n/g, ' ').trim();
   const couleurs = Array.isArray(champs.couleurs)
     ? `[${champs.couleurs.map((c) => `"${clean(c)}"`).join(', ')}]`
@@ -1344,7 +1401,8 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
     `ambiance: "${clean(champs.ambiance)}"`
   ];
 
-  const newBlock = `{${eol}${fields.map((f) => `      ${f},`).join(eol)}${eol}    }`;
+  const lignes = fields.map((f) => `      ${f},`).concat(propsPreservees);
+  const newBlock = `{${eol}${lignes.join(eol)}${eol}    }`;
   const newContent = bodyStart.slice(0, target.start) + newBlock + bodyStart.slice(target.end);
   fs.writeFileSync(CONTENU_JS, (hasBom ? '\uFEFF' : '') + newContent, 'utf-8');
 
