@@ -551,7 +551,7 @@ const CONTENU_SITE = {
       prix: "À partir de 120 MAD",
       badge: null,
       materiauRecommande: "bâche premium",
-      montageRecommande: "Toile Tendue",
+      montageRecommande: "Cadre Américain",
       couleurs: ["Violet", "Fuchsia", "Or", "Noir"],
       ambiance: "Feutrée et dramatique",
     },
