@@ -279,7 +279,7 @@ const CONTENU_SITE = {
       prix: "À partir de 190 MAD",
       badge: "Nouveau",
       materiauRecommande: "bâche premium",
-      montageRecommande: "Cadre Américain",
+      montageRecommande: "Châssis Bois",
       couleurs: ["Crème", "Doré", "Vert Patiné", "Beige"],
       ambiance: "Spirituelle, majestueuse et lumineuse",
     },
