@@ -581,7 +581,7 @@ const CONTENU_SITE = {
       prix: "À partir de 120 MAD",
       badge: "Nouveau",
       materiauRecommande: "bâche premium",
-      montageRecommande: "Sans cadre",
+      montageRecommande: "Châssis Bois",
       couleurs: ["Ocre", "Terracotta", "Vert olive", "Crème"],
       ambiance: "Chaleureuse, lumineuse et méditerranéenne",
     },
