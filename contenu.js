@@ -582,14 +582,13 @@ const CONTENU_SITE = {
       style: "contemporain",
       environnement: "salon",
       image: "images/produit-23.jpg",
-      imageFallback: "🏡",
+      imageFallback: "🎨",
       prix: "À partir de 120 MAD",
       badge: "Nouveau",
-      materiauRecommande: "Toile Canvas",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Sans cadre",
-      panneaux: 1,
       couleurs: ["Ocre", "Terracotta", "Vert olive", "Crème"],
-      ambiance: "Chaleureuse, lumineuse et méditerranéenne"
+      ambiance: "Chaleureuse, lumineuse et méditerranéenne",
     },
     {
       nom: "Ondes Sculpturales",
