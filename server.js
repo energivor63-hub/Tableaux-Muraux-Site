@@ -238,7 +238,13 @@ app.post('/api/control-tower/trigger-integration', async (req, res) => {
 app.get('/api/control-tower/catalog', (req, res) => {
   try {
     const catalog = getCurrentCatalog();
-    res.type('application/json').json({ success: true, catalog });
+    // Anti-cache : un navigateur peut resservir un catalogue obsolete (ex : 11
+    // oeuvres alors que contenu.js en contient 25). no-store + must-revalidate
+    // garantit que le dashboard recoit toujours l'etat reel du catalogue.
+    res.setHeader('Cache-Control', 'no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.type('application/json').json({ success: true, catalog, total: catalog.length });
   } catch (err) {
     console.error('Erreur catalogue:', err);
     res.status(500).type('application/json').json({ success: false, error: err.message });
