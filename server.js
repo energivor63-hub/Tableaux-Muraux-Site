@@ -822,6 +822,13 @@ function cause401Composio(corps, message) {
 /** Cause lisible d'un échec Composio (token, scopes, IG non business, média…). */
 function causeComposio(httpStatus, corps, message) {
   const txt = [message, JSON.stringify(corps === undefined ? '' : corps)].join(' ').toLowerCase();
+  // NOUVEAU CONTRAT API (2026-09) : code 1811 « ActionExecute_ConnectedAccountEntityIdRequired »
+  // → COMPOSIO_ENTITY_ID manquant. Cause CLAIRE, jamais masquée sous « clé
+  // invalide » (801/812) ni sous un faux OAuth 190.
+  if (/entityidrequired/i.test(txt) || /"code"\s*:\s*1811/.test(JSON.stringify(corps || '')) || /pass entity_id/i.test(txt)) {
+    return 'entity_id manquant dans .env : renseignez COMPOSIO_ENTITY_ID=<valeur> (voir /connected_accounts Composio).';
+  }
+
   // Cause EXACTE remontée en production (clé sans droit d'exécution d'outil)
   if (/tool_execution|does not have the permissions|insufficientpermissions/.test(txt)) {
     return "La clé COMPOSIO_API_KEY n'a pas la permission « tool_execution » (write) : activez-la sur app.composio.dev → API Keys, ou utilisez une clé qui l'a.";
@@ -952,7 +959,12 @@ async function resoudreIgUserId() {
   const apiKey = String(process.env.COMPOSIO_API_KEY || '').trim();
   if (!apiKey) return '';
   const connecte = String(process.env.INSTAGRAM_CONNECTED_ACCOUNT_ID || '').trim();
-  const chemins = [COMPOSIO_BASE + '/connected_accounts', COMPOSIO_BASE + '/connected-accounts'];
+  // NOUVEAU CONTRAT API : entity_id est passé à tout appel direct COMPOSIO_BASE
+  // quand il est défini (paramètre ignoré s'il n'est pas supporté ; le
+  // filtrage client par connected_account_id reste inchangé).
+  const entityId = String(process.env.COMPOSIO_ENTITY_ID || '').trim();
+  const suffixe = entityId ? `?entity_id=${encodeURIComponent(entityId)}` : '';
+  const chemins = [COMPOSIO_BASE + '/connected_accounts' + suffixe, COMPOSIO_BASE + '/connected-accounts' + suffixe];
   for (const url of chemins) {
     const controleur = new AbortController();
     const minuteur = setTimeout(() => controleur.abort(), 15000);
@@ -1035,6 +1047,10 @@ function argumentsComposioSync(reseau, { texte, mediaUrl, lien, alt, igUserId })
  * absent → rien n'est ajouté (rétrocompatibilité, jamais bloquant). */
 async function appelerComposio(slug, args, sessionCtx) {
   const url = `${COMPOSIO_BASE}/tools/execute/${slug}`;
+  // NOUVEAU CONTRAT API : entity_id obligatoire sur /tools/execute (sinon
+  // HTTP 400 code 1811 ConnectedAccountEntityIdRequired). Envoyé UNIQUEMENT
+  // s'il est défini — jamais de entity_id vide.
+  const entityId = String(process.env.COMPOSIO_ENTITY_ID || '').trim();
   const requete = {};
   Object.keys(args || {}).forEach((k) => {
     const v = args[k];
@@ -1047,6 +1063,7 @@ async function appelerComposio(slug, args, sessionCtx) {
       user_id: String(process.env.COMPOSIO_USER_ID || process.env.USER_ID || 'default'),
       arguments: requete
     };
+    if (entityId) corpsRequete.entity_id = entityId;
     if (sessionCtx && sessionCtx.id) corpsRequete.session_id = sessionCtx.id;
     const res = await fetch(url, {
       method: 'POST',
@@ -1138,9 +1155,15 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
       corps: corpsMasque(reponse.corps),
       message: messageBrut,
       cause,
-      // LOT B : fbtrace_id Meta journalisé quand présent ; LOT D : session Composio
+      // LOT B : fbtrace_id Meta journalisé quand présent ; LOT D : session
+      // Composio ; NOUVEAU CONTRAT : entity_id masqué 4+4 (voisin de session
+      // et du connected_account_id déjà présent dans le payload journalisé).
       fbtraceId: extraireFbtraceId(reponse.corps) || undefined,
       session: (session && session.id) || undefined,
+      entityId: (() => {
+        const id = String(process.env.COMPOSIO_ENTITY_ID || '').trim();
+        return id ? (id.length <= 8 ? '***' : id.slice(0, 4) + '…' + id.slice(-4)) : undefined;
+      })(),
       mediaUrl,
       hashContenu: hashContenu(texte),
       contenu: texte,
