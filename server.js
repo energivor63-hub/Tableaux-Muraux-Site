@@ -564,8 +564,11 @@ const PUBLIC_MEDIA_BASE = 'https://energivor63-hub.github.io/Tableaux-Muraux-Sit
 const ANTI_DOUBLON_MS = 24 * 60 * 60 * 1000; // refus du renvoi vers le MÊME réseau sous 24 h (sauf Forcer)
 const COMPOSIO_BASE = String(process.env.COMPOSIO_API_BASE || 'https://backend.composio.dev/api/v3').replace(/\/+$/, '');
 const COMPOSIO_SLUGS = {
-  facebook: ['FACEBOOK_CREATE_PHOTO_POST_PAGE', 'FACEBOOK_CREATE_PHOTO_POST', 'FACEBOOK_CREATE_POST'],
-  instagram: ['INSTAGRAM_CREATE_POST', 'INSTAGRAM_CREATE_IMAGE_POST', 'INSTAGRAM_CREATE_MEDIA_CONTAINER']
+  // Slugs VALIDÉS contre l'API Composio réelle (test des slugs 2026-09 :
+  // 404 Tool_ToolNotFound pour FACEBOOK_CREATE_PHOTO_POST_PAGE, FACEBOOK_CREATE_PHOTO_POST
+  // et tous les slugs de profil IG ; 400 « arguments manquants » = slug existant).
+  facebook: ['FACEBOOK_CREATE_POST'],
+  instagram: ['INSTAGRAM_CREATE_MEDIA_CONTAINER', 'INSTAGRAM_CREATE_POST']
 };
 const INTEGRATEUR_RESEAU = { facebook: 'composio', instagram: 'composio', pinterest: 'buffer' };
 const LABEL_RESEAU = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest' };
@@ -931,7 +934,13 @@ function chercherIdDansObjet(noeud, prof) {
   return repli;
 }
 
-/** Resout IG_USER_ID : env, cache, auto-decouverte Composio (profil puis comptes). */
+/** Resout IG_USER_ID : env (IG_USER_ID/INSTAGRAM_USER_ID), cache, puis liste
+ * des comptes connectés Composio. ⛔ Auto-découverte par slugs de profil
+ * SUPPRIMÉE : INSTAGRAM_GET_ME_PROFILE / INSTAGRAM_GET_PROFILE / GET_USER /
+ * GET_ACCOUNT_INFO / GET_BUSINESS_ACCOUNT répondent tous 404 Tool_ToolNotFound
+ * (test des slugs 2026-09), et un appel INSTAGRAM_CREATE_POST sans argument
+ * risquerait de créer une publication vide. L'utilisateur renseigne IG_USER_ID
+ * dans .env ; l'outil recuperer_instagram_id.py aide à le trouver. */
 async function resoudreIgUserId() {
   const depuisEnv = lireIgUserIdEnv();
   if (depuisEnv) {
@@ -942,32 +951,7 @@ async function resoudreIgUserId() {
   if (cacheIgUserId) return cacheIgUserId;
   const apiKey = String(process.env.COMPOSIO_API_KEY || '').trim();
   if (!apiKey) return '';
-  const userId = String(process.env.COMPOSIO_USER_ID || process.env.USER_ID || 'default');
   const connecte = String(process.env.INSTAGRAM_CONNECTED_ACCOUNT_ID || '').trim();
-  const slugsProfil = ['INSTAGRAM_GET_ME_PROFILE', 'INSTAGRAM_GET_PROFILE', 'INSTAGRAM_GET_USER', 'INSTAGRAM_GET_ACCOUNT_INFO', 'INSTAGRAM_GET_BUSINESS_ACCOUNT'];
-  for (const slug of slugsProfil) {
-    const controleur = new AbortController();
-    const minuteur = setTimeout(() => controleur.abort(), 15000);
-    try {
-      const args = {};
-      if (connecte) args.connected_account_id = connecte;
-      const res = await fetch(COMPOSIO_BASE + '/tools/execute/' + slug, {
-        method: 'POST',
-        headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, arguments: args }),
-        signal: controleur.signal
-      });
-      const txt = await res.text();
-      let corps = null;
-      try { corps = JSON.parse(txt); } catch (e2) { corps = { brut: txt.slice(0, 1500) }; }
-      const trouve = chercherIdDansObjet(corps);
-      if (trouve) {
-        sauvegarderIgUserId(trouve);
-        return trouve;
-      }
-    } catch (e) { /* slug suivant */ }
-    finally { clearTimeout(minuteur); }
-  }
   const chemins = [COMPOSIO_BASE + '/connected_accounts', COMPOSIO_BASE + '/connected-accounts'];
   for (const url of chemins) {
     const controleur = new AbortController();
@@ -1100,7 +1084,7 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
   if (reseau === 'instagram') {
     igUserId = await resoudreIgUserId();
     if (!igUserId) {
-      const causeClaire = 'IG_USER_ID introuvable — voir Connected accounts Composio';
+      const causeClaire = 'IG_USER_ID manquant — renseignez IG_USER_ID=<id numérique Instagram> dans .env (voir Connected accounts Composio ou lancez recuperer_instagram_id.py)';
       journaliserIntegration({
         type: 'publication',
         integrateur: 'composio',
