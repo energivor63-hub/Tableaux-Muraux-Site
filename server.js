@@ -631,23 +631,35 @@ async function verifierMediaPublic(mediaUrl, fiche) {
       return { ok: false, url, erreur: 'URL média absente et produit non identifiable — envoi annulé. URL attendue : ' + PUBLIC_MEDIA_BASE + 'images/produit-N.jpg' };
     }
     const reconstruite = PUBLIC_MEDIA_BASE + 'images/' + nom + '.jpg';
-    try {
-      const r = await fetch(reconstruite, { method: 'GET', headers: { Range: 'bytes=0-0' } });
-      if (r.status === 200 || r.status === 206) return { ok: true, url: reconstruite, httpStatus: r.status };
-      return { ok: false, url: reconstruite, erreur: `Média public inaccessible (HTTP ${r.status}) : ${reconstruite}` };
-    } catch (e) {
-      return { ok: false, url: reconstruite, erreur: `Média public inaccessible (${e.message}) : ${reconstruite}` };
-    }
+    return verifierUrlMedia(reconstruite);
   }
   if (!/^https:\/\//i.test(url)) {
     return { ok: false, url, erreur: 'URL média non publique (HTTPS obligatoire) — envoi annulé. URL attendue : ' + PUBLIC_MEDIA_BASE + 'images/produit-N.jpg' };
   }
+  // Branche unique : toute URL https passe par le check instrumenté UNIQUE
+  // (statut 200/206 + content-type image/*, log [media-check] URL/statut/type/octet).
+  return verifierUrlMedia(url);
+}
+
+/** Check média unique : HTTP 200/206 + content-type image/* UNIQUEMENT —
+ * JAMAIS de comparaison hash/taille avec le fichier local (GitHub sert
+ * l'image pré-push jusqu'au push). Instrumentation demandée : URL exacte +
+ * statut + content-type + octets (via content-range). */
+async function verifierUrlMedia(cible) {
   try {
-    const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' } });
-    if (r.status === 200 || r.status === 206) return { ok: true, url, httpStatus: r.status };
-    return { ok: false, url, erreur: `Média public inaccessible (HTTP ${r.status}) : ${url}` };
+    const r = await fetch(cible, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+    const type = String((r.headers && r.headers.get('content-type')) || '').trim();
+    const plage = String((r.headers && r.headers.get('content-range')) || '');
+    const taillePlage = plage.match(/\/(\d+)\s*$/);
+    const octets = taillePlage ? Number(taillePlage[1]) : (Number(r.headers.get('content-length')) || 0);
+    console.log(`[media-check] ${cible} → HTTP ${r.status} | content-type: ${type || '?'} | octets: ${octets || '?'}`);
+    if ((r.status === 200 || r.status === 206) && /^image\//i.test(type)) {
+      return { ok: true, url: cible, httpStatus: r.status, contentType: type, octets };
+    }
+    return { ok: false, url: cible, erreur: `Média public inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${cible}` };
   } catch (e) {
-    return { ok: false, url, erreur: `Média public inaccessible (${e.message}) : ${url}` };
+    console.log(`[media-check] ${cible} → ERREUR ${e.message}`);
+    return { ok: false, url: cible, erreur: `Média public inaccessible (${e.message}) : ${cible}` };
   }
 }
 
@@ -811,10 +823,12 @@ function causeComposio(httpStatus, corps, message) {
   if (/tool_execution|does not have the permissions|insufficientpermissions/.test(txt)) {
     return "La clé COMPOSIO_API_KEY n'a pas la permission « tool_execution » (write) : activez-la sur app.composio.dev → API Keys, ou utilisez une clé qui l'a.";
   }
+  // LOT B étendu : le corps OAuthException/code 190 peut arriver avec un statut
+  // ≠ 401 (200 + successful:false, 400, 500…) — la classification passe AVANT
+  // le test du statut, sinon le corps BRUT fuit dans la puce affichée.
+  const classeeTouteStatut = cause401Composio(corps, message);
+  if (classeeTouteStatut) return classeeTouteStatut.message;
   if (httpStatus === 401) {
-    // ═══ LOT B — 401 : distinguer déconnexion fournisseur (OAuth) et clé Composio ═══
-    const classee = cause401Composio(corps, message);
-    if (classee) return classee.message;
     return 'Clé COMPOSIO_API_KEY invalide ou expirée (HTTP 401) — régénérez-la sur app.composio.dev.';
   }
   if (httpStatus === 403 || /scope|permission|forbidden|not authorized/.test(txt)) {
@@ -1005,13 +1019,15 @@ function argumentsComposioSync(reseau, { texte, mediaUrl, lien, alt, igUserId })
     ? process.env.FACEBOOK_CONNECTED_ACCOUNT_ID
     : process.env.INSTAGRAM_CONNECTED_ACCOUNT_ID;
   if (reseau === 'facebook') {
+    // Le champ url = IMAGE publique (produit-N.jpg) ; `link` = destination,
+    // envoyé SEULEMENT s'il est une URL http(s) valide (jamais « #gallery »).
     return {
       connected_account_id: connecte,
       page_id: process.env.FACEBOOK_PAGE_ID,
       url: mediaUrl,
       message: texte,
       caption: texte,
-      link: lien,
+      link: /^https?:\/\//i.test(String(lien || '')) ? lien : undefined,
       alt_text: alt
     };
   }
@@ -1146,6 +1162,7 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
       contenu: texte,
       payload: payloadJournalise(slug, reponse.requete || args, texte)
     });
+    console.log(`[composio] ${reseau} → ${slug} : HTTP ${reponse.httpStatus} ${ok ? 'succes' : 'echec'}${idSession ? ` | session=${idSession}` : ''}`);
     if (ok) {
       return { ok: true, slug, httpStatus: reponse.httpStatus, corps: reponse.corps, endpoint: reponse.endpoint };
     }
@@ -1439,6 +1456,16 @@ async function executerPublication(body, ciblesForcees) {
         resultats.push({ reseau: platform, integrateur: 'inconnu', succes: false, message });
       }
     }
+
+    // 🔭 Instrumentation demandée : slug + statut PAR RÉSEAU (traçabilité des
+    // envois réels ; un « succes » sans appel HTTP devient immédiatement visible).
+    console.log('[publication] plateformes autorisées :', autorises.join(', '));
+    resultats.forEach((r) => {
+      console.log(`[publication] ${r.reseau} | statut=${r.succes ? 'succes' : 'echec'} | integrateur=${r.integrateur} | action=${r.action || '-'}${r.httpStatus !== undefined ? ` | HTTP=${r.httpStatus}` : ''}`);
+    });
+    refus.forEach((r) => {
+      console.log(`[publication] ${r.reseau} | statut=refus (garde-fou anti-doublon) | ${r.message}`);
+    });
 
     fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
 
