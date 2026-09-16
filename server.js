@@ -756,8 +756,174 @@ function causeComposio(httpStatus, corps, message) {
   return `Échec Composio${httpStatus ? ` (HTTP ${httpStatus})` : ''}.`;
 }
 
-/** Arguments de l'action Composio selon le réseau (champs vides supprimés). */
-function argumentsComposio(reseau, { texte, mediaUrl, lien, alt }) {
+/** Texte envoye tronque a 200 caracteres (diagnostic, jamais de secret). */
+function tronquer200(t) {
+  return String(t === undefined || t === null ? '' : t).slice(0, 200);
+}
+
+/** Cache memoire de l'IG User ID (auto-decouverte au premier envoi). */
+let cacheIgUserId = String(process.env.IG_USER_ID || '').trim() || null;
+
+/** Lecture env : IG_USER_ID prioritaire, INSTAGRAM_USER_ID historique accepte. */
+function lireIgUserIdEnv() {
+  const direct = String(process.env.IG_USER_ID || '').trim();
+  if (direct) return direct;
+  const legacy = String(process.env.INSTAGRAM_USER_ID || '').trim();
+  if (legacy) return legacy;
+  return '';
+}
+
+/** Persiste IG_USER_ID en memoire + process.env + ligne IG_USER_ID= dans .env. */
+function sauvegarderIgUserId(id) {
+  const propre = String(id || '').trim();
+  if (!propre) return;
+  cacheIgUserId = propre;
+  process.env.IG_USER_ID = propre;
+  try {
+    if (ROOT_ENV_FILE && fs.existsSync(ROOT_ENV_FILE)) {
+      let contenu = fs.readFileSync(ROOT_ENV_FILE, 'utf-8');
+      if (/^IG_USER_ID\s*=.*/m.test(contenu)) {
+        contenu = contenu.replace(/^IG_USER_ID\s*=.*/m, 'IG_USER_ID=' + propre);
+      } else {
+        if (!contenu.endsWith('\n')) contenu += '\n';
+        contenu += 'IG_USER_ID=' + propre + '\n';
+      }
+      fs.writeFileSync(ROOT_ENV_FILE, contenu, 'utf-8');
+    }
+  } catch (e) {
+    console.warn('[social] IG_USER_ID non persiste dans .env :', e.message);
+  }
+}
+
+/** Cherche un id numerique IG dans une reponse Composio (prof max 6). */
+function chercherIdDansObjet(noeud, prof) {
+  const p = Number(prof || 0);
+  if (!noeud || p > 6) return null;
+  if (typeof noeud === 'string') {
+    const mm = noeud.match(/\b(\d{15,20})\b/);
+    return mm ? mm[1] : null;
+  }
+  if (typeof noeud !== 'object') return null;
+  const prios = ['ig_user_id', 'ig_id', 'instagram_user_id', 'business_account_id'];
+  for (const kk of prios) {
+    const vv = noeud[kk];
+    if ((typeof vv === 'string' || typeof vv === 'number') && String(vv).trim().match(/^\d{8,20}$/)) return String(vv).trim();
+  }
+  let repli = null;
+  const secs = ['user_id', 'userId', 'account_id', 'id'];
+  for (const kk of Object.keys(noeud)) {
+    if (secs.indexOf(kk) >= 0) {
+      const vv = noeud[kk];
+      if ((typeof vv === 'string' || typeof vv === 'number') && String(vv).trim().match(/^\d{8,20}$/)) {
+        const ss = String(vv).trim();
+        if (/^17841\d+/.test(ss)) return ss;
+        if (!repli) repli = ss;
+      }
+    }
+  }
+  for (const kk of Object.keys(noeud)) {
+    try {
+      const trouve = chercherIdDansObjet(noeud[kk], p + 1);
+      if (trouve) {
+        if (/^17841\d+/.test(trouve)) return trouve;
+        if (!repli) repli = trouve;
+      }
+    } catch (e) { /* ignorer */ }
+  }
+  try {
+    const brut = JSON.stringify(noeud);
+    const m178 = brut.match(/\b(17841\d{8,15})\b/);
+    if (m178) return m178[1];
+    const mLong = brut.match(/\b(\d{15,20})\b/);
+    if (mLong) return mLong[1];
+  } catch (e) { /* ignorer */ }
+  return repli;
+}
+
+/** Resout IG_USER_ID : env, cache, auto-decouverte Composio (profil puis comptes). */
+async function resoudreIgUserId() {
+  const depuisEnv = lireIgUserIdEnv();
+  if (depuisEnv) {
+    cacheIgUserId = depuisEnv;
+    if (!String(process.env.IG_USER_ID || '').trim()) process.env.IG_USER_ID = depuisEnv;
+    return depuisEnv;
+  }
+  if (cacheIgUserId) return cacheIgUserId;
+  const apiKey = String(process.env.COMPOSIO_API_KEY || '').trim();
+  if (!apiKey) return '';
+  const userId = String(process.env.COMPOSIO_USER_ID || process.env.USER_ID || 'default');
+  const connecte = String(process.env.INSTAGRAM_CONNECTED_ACCOUNT_ID || '').trim();
+  const slugsProfil = ['INSTAGRAM_GET_ME_PROFILE', 'INSTAGRAM_GET_PROFILE', 'INSTAGRAM_GET_USER', 'INSTAGRAM_GET_ACCOUNT_INFO', 'INSTAGRAM_GET_BUSINESS_ACCOUNT'];
+  for (const slug of slugsProfil) {
+    const controleur = new AbortController();
+    const minuteur = setTimeout(() => controleur.abort(), 15000);
+    try {
+      const args = {};
+      if (connecte) args.connected_account_id = connecte;
+      const res = await fetch(COMPOSIO_BASE + '/tools/execute/' + slug, {
+        method: 'POST',
+        headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, arguments: args }),
+        signal: controleur.signal
+      });
+      const txt = await res.text();
+      let corps = null;
+      try { corps = JSON.parse(txt); } catch (e2) { corps = { brut: txt.slice(0, 1500) }; }
+      const trouve = chercherIdDansObjet(corps);
+      if (trouve) {
+        sauvegarderIgUserId(trouve);
+        return trouve;
+      }
+    } catch (e) { /* slug suivant */ }
+    finally { clearTimeout(minuteur); }
+  }
+  const chemins = [COMPOSIO_BASE + '/connected_accounts', COMPOSIO_BASE + '/connected-accounts'];
+  for (const url of chemins) {
+    const controleur = new AbortController();
+    const minuteur = setTimeout(() => controleur.abort(), 15000);
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
+        signal: controleur.signal
+      });
+      const txt = await res.text();
+      let corps = null;
+      try { corps = JSON.parse(txt); } catch (e2) { corps = { brut: txt.slice(0, 1500) }; }
+      let cible = corps;
+      try {
+        const liste = corps && (corps.items || corps.data || corps.connectedAccounts || corps.accounts || (Array.isArray(corps) ? corps : null));
+        if (Array.isArray(liste) && connecte) {
+          let match = null;
+          for (const cpt of liste) {
+            const cid = String((cpt && (cpt.id || cpt.connected_account_id || cpt.connectedAccountId)) || '');
+            if (cid === connecte) { match = cpt; break; }
+          }
+          if (match) cible = match;
+        }
+      } catch (e2) { /* ignorer */ }
+      const trouve = chercherIdDansObjet(cible);
+      if (trouve) {
+        sauvegarderIgUserId(trouve);
+        return trouve;
+      }
+    } catch (e) { /* chemin suivant */ }
+    finally { clearTimeout(minuteur); }
+  }
+  return '';
+}
+
+/** Construit la vue journal du payload (texte tronque a 200 caracteres). */
+function payloadJournalise(action, requete, texte) {
+  const args = { ...(requete || {}) };
+  ['message', 'caption', 'text', 'description'].forEach((k) => {
+    if (typeof args[k] === 'string' && args[k].length > 200) args[k] = args[k].slice(0, 200);
+  });
+  return { action, arguments: corpsMasque(args), texteTronque: tronquer200(texte) };
+}
+
+/** ARG Composio selon reseau (champs vides supprimes). */
+function argumentsComposioSync(reseau, { texte, mediaUrl, lien, alt, igUserId }) {
   const connecte = reseau === 'facebook'
     ? process.env.FACEBOOK_CONNECTED_ACCOUNT_ID
     : process.env.INSTAGRAM_CONNECTED_ACCOUNT_ID;
@@ -766,14 +932,20 @@ function argumentsComposio(reseau, { texte, mediaUrl, lien, alt }) {
       connected_account_id: connecte,
       page_id: process.env.FACEBOOK_PAGE_ID,
       url: mediaUrl,
+      message: texte,
       caption: texte,
       link: lien,
       alt_text: alt
     };
   }
+  const ig = String(igUserId || '').trim()
+    || String(process.env.IG_USER_ID || '').trim()
+    || String(process.env.INSTAGRAM_USER_ID || '').trim()
+    || String(cacheIgUserId || '').trim();
   return {
     connected_account_id: connecte,
-    instagram_account_id: process.env.INSTAGRAM_USER_ID,
+    ig_user_id: ig,
+    instagram_account_id: ig,
     image_url: mediaUrl,
     caption: texte,
     alt_text: alt
@@ -826,7 +998,33 @@ function composioEstSucces(reponse) {
  */
 async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl, lien, alt }) {
   const slugs = COMPOSIO_SLUGS[reseau] || [];
-  const args = argumentsComposio(reseau, { texte, mediaUrl, lien, alt });
+  let igUserId = '';
+  if (reseau === 'instagram') {
+    igUserId = await resoudreIgUserId();
+    if (!igUserId) {
+      const causeClaire = 'IG_USER_ID introuvable — voir Connected accounts Composio';
+      journaliserIntegration({
+        type: 'publication',
+        integrateur: 'composio',
+        reseau: LABEL_RESEAU[reseau] || reseau,
+        produit,
+        produitNom,
+        action: slugs[0] || 'INSTAGRAM_CREATE_POST',
+        endpoint: COMPOSIO_BASE + '/tools/execute/' + (slugs[0] || 'INSTAGRAM_CREATE_POST'),
+        statut: 'echec',
+        httpStatus: 0,
+        corps: { erreur: causeClaire },
+        message: causeClaire,
+        cause: causeClaire,
+        mediaUrl,
+        hashContenu: hashContenu(texte),
+        contenu: texte,
+        payload: payloadJournalise(slugs[0] || 'INSTAGRAM_CREATE_POST', { ig_user_id: '' }, texte)
+      });
+      return { ok: false, slug: slugs[0] || 'INSTAGRAM_CREATE_POST', httpStatus: 0, corps: { erreur: causeClaire }, cause: causeClaire, message: causeClaire };
+    }
+  }
+  const args = argumentsComposioSync(reseau, { texte, mediaUrl, lien, alt, igUserId });
   let dernier = null;
   for (const slug of slugs) {
     let reponse;
@@ -854,7 +1052,8 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
       cause,
       mediaUrl,
       hashContenu: hashContenu(texte),
-      contenu: texte
+      contenu: texte,
+      payload: payloadJournalise(slug, reponse.requete || args, texte)
     });
     if (ok) {
       return { ok: true, slug, httpStatus: reponse.httpStatus, corps: reponse.corps, endpoint: reponse.endpoint };
