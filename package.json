@@ -15,5 +15,8 @@
     "express": "^4.21.2",
     "groq-sdk": "^1.6.0",
     "multer": "^2.3.0"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1"
   }
 }

@@ -736,6 +736,74 @@ function extraireMessageComposio(corps) {
   return trouve ? String(trouve).slice(0, 600) : '';
 }
 
+/** Recherche profonde de fbtrace_id dans un corps Composio/Facebook (diagnostic Meta). */
+function extraireFbtraceId(corps) {
+  try {
+    const m = JSON.stringify(corps || '').match(/fbtrace_id["':\s]+([A-Za-z0-9]+)/);
+    return m ? m[1] : null;
+  } catch (e) { return null; }
+}
+
+/** ═══ LOT D — extraction d'un session.id Composio (connexion multi-étapes). ═══
+ * Cherche session.id / session_id dans la réponse (profondeur incluse).
+ * Renvoie null si absent : JAMAIS bloquant, rétrocompatibilité totale. */
+function extraireSessionComposio(corps) {
+  try {
+    const noeuds = [corps, corps && corps.data, corps && corps.data && corps.data.data];
+    for (const n of noeuds) {
+      if (!n || typeof n !== 'object') continue;
+      const s = n.session;
+      const id = s && (s.id || s.session_id || s.sessionId);
+      if (id) return String(id);
+      const direct = n.session_id || n.sessionId;
+      if (direct) return String(direct);
+    }
+    const brut = JSON.stringify(corps || '');
+    const mObj = brut.match(/"session"\s*:\s*\{[^{}]*?"id"\s*:\s*"([^"]+)"/);
+    if (mObj) return mObj[1];
+    const mChamp = brut.match(/"session_id"\s*:\s*"([^"]+)"/);
+    if (mChamp) return mChamp[1];
+  } catch (e) { /* jamais bloquant */ }
+  return null;
+}
+
+/**
+ * ═══ LOT B — CLASSIFICATEUR 401 : DÉCONNEXION FOURNISSEUR ≠ CLÉ COMPOSIO ═══
+ * Un HTTP 401 dont le corps transporte une erreur OAuth Facebook/Instagram
+ * (OAuthException, code 190, session invalidée) signifie que le COMPTE
+ * Facebook/Instagram est déconnecté chez Composio : la clé COMPOSIO_API_KEY,
+ * elle, fonctionne. « Clé invalide » est réservé aux codes Composio 801/812.
+ */
+function cause401Composio(corps, message) {
+  const txt = [message || '', JSON.stringify(corps === undefined || corps === null ? '' : corps)].join(' ');
+  const trace = extraireFbtraceId(corps);
+  const deconnexionFournisseur =
+    /OAuthException/i.test(txt) ||
+    /"code"\s*:\s*190|code["']?\s*[:=]\s*190/.test(txt) ||
+    /session has been invalidated/i.test(txt) ||
+    /Error validating access token/i.test(txt) ||
+    /The access token could not be decoded|access token.*(expired|invalid)/i.test(txt);
+  if (deconnexionFournisseur) {
+    return {
+      message: 'Compte Facebook/Instagram déconnecté chez Composio : reconnectez-le (Toolkits → Connected accounts → Reconnect)' + (trace ? ` [fbtrace_id: ${trace}]` : '') + '.',
+      fbtraceId: trace
+    };
+  }
+  const codeComposio = (() => {
+    try {
+      const m = JSON.stringify(corps || '').match(/"code"\s*:\s*(\d+)/);
+      return m ? parseInt(m[1], 10) : null;
+    } catch (e) { return null; }
+  })();
+  if (codeComposio === 801 || codeComposio === 812) {
+    return {
+      message: `Clé COMPOSIO_API_KEY invalide ou expirée (code Composio ${codeComposio}) — régénérez-la sur app.composio.dev.`,
+      fbtraceId: null
+    };
+  }
+  return null; // non classifié : l'appelant garde son message générique
+}
+
 /** Cause lisible d'un échec Composio (token, scopes, IG non business, média…). */
 function causeComposio(httpStatus, corps, message) {
   const txt = [message, JSON.stringify(corps === undefined ? '' : corps)].join(' ').toLowerCase();
@@ -743,7 +811,10 @@ function causeComposio(httpStatus, corps, message) {
   if (/tool_execution|does not have the permissions|insufficientpermissions/.test(txt)) {
     return "La clé COMPOSIO_API_KEY n'a pas la permission « tool_execution » (write) : activez-la sur app.composio.dev → API Keys, ou utilisez une clé qui l'a.";
   }
-  if (httpStatus === 401 || /invalid api key|unauthori[sz]ed|authentication/.test(txt)) {
+  if (httpStatus === 401) {
+    // ═══ LOT B — 401 : distinguer déconnexion fournisseur (OAuth) et clé Composio ═══
+    const classee = cause401Composio(corps, message);
+    if (classee) return classee.message;
     return 'Clé COMPOSIO_API_KEY invalide ou expirée (HTTP 401) — régénérez-la sur app.composio.dev.';
   }
   if (httpStatus === 403 || /scope|permission|forbidden|not authorized/.test(txt)) {
@@ -958,8 +1029,11 @@ function argumentsComposioSync(reseau, { texte, mediaUrl, lien, alt, igUserId })
   };
 }
 
-/** Appel Composio v3 (une action) — TOUTE réponse est renvoyée pour journalisation. */
-async function appelerComposio(slug, args) {
+/** Appel Composio v3 (une action) — TOUTE réponse est renvoyée pour journalisation.
+ * LOT D : si un session.id a été capturé plus tôt dans la MÊME requête de
+ * publication (sessionCtx.id), il est repassé en champ session_id de l'appel ;
+ * absent → rien n'est ajouté (rétrocompatibilité, jamais bloquant). */
+async function appelerComposio(slug, args, sessionCtx) {
   const url = `${COMPOSIO_BASE}/tools/execute/${slug}`;
   const requete = {};
   Object.keys(args || {}).forEach((k) => {
@@ -969,13 +1043,15 @@ async function appelerComposio(slug, args) {
   const controleur = new AbortController();
   const minuteur = setTimeout(() => controleur.abort(), 30000);
   try {
+    const corpsRequete = {
+      user_id: String(process.env.COMPOSIO_USER_ID || process.env.USER_ID || 'default'),
+      arguments: requete
+    };
+    if (sessionCtx && sessionCtx.id) corpsRequete.session_id = sessionCtx.id;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'x-api-key': String(process.env.COMPOSIO_API_KEY || ''), 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_id: String(process.env.COMPOSIO_USER_ID || process.env.USER_ID || 'default'),
-        arguments: requete
-      }),
+      body: JSON.stringify(corpsRequete),
       signal: controleur.signal
     });
     const texte = await res.text();
@@ -1002,7 +1078,7 @@ function composioEstSucces(reponse) {
  * JOURNALISE CHAQUE RÉPONSE (statut HTTP + corps JSON + message) dans
  * journal_integrations.json, et renvoie une cause LISIBLE en cas d'échec.
  */
-async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl, lien, alt }) {
+async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl, lien, alt, session }) {
   const slugs = COMPOSIO_SLUGS[reseau] || [];
   let igUserId = '';
   if (reseau === 'instagram') {
@@ -1035,10 +1111,16 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
   for (const slug of slugs) {
     let reponse;
     try {
-      reponse = await appelerComposio(slug, args);
+      reponse = await appelerComposio(slug, args, session);
     } catch (e) {
       reponse = { endpoint: `${COMPOSIO_BASE}/tools/execute/${slug}`, httpStatus: 0, corps: { erreur: e.message }, requete: args };
     }
+    // ═══ LOT D — capture d'un session.id renvoyé par Composio : stocké dans le
+    // contexte de la requête (sessionCtx partagé entre réseaux) et repassé aux
+    // appels outils SUIVANTS de la MÊME publication (ex. IG container → publish).
+    // Absent → rien (rétrocompatibilité) ; JAMAIS bloquant.
+    const idSession = extraireSessionComposio(reponse.corps);
+    if (idSession && session && !session.id) session.id = idSession;
     const ok = composioEstSucces(reponse);
     const messageBrut = extraireMessageComposio(reponse.corps);
     const cause = ok ? null : causeComposio(reponse.httpStatus, reponse.corps, messageBrut);
@@ -1056,6 +1138,9 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
       corps: corpsMasque(reponse.corps),
       message: messageBrut,
       cause,
+      // LOT B : fbtrace_id Meta journalisé quand présent ; LOT D : session Composio
+      fbtraceId: extraireFbtraceId(reponse.corps) || undefined,
+      session: (session && session.id) || undefined,
       mediaUrl,
       hashContenu: hashContenu(texte),
       contenu: texte,
@@ -1078,10 +1163,25 @@ if (!fs.existsSync(SOCIAL_JOURNAL_DIR)) {
   fs.mkdirSync(SOCIAL_JOURNAL_DIR, { recursive: true });
 }
 
+// ═══ LOT C — CACHE-BUSTING : JAMAIS d'UI périmée après un correctif ═══
+// /dashboard.html, /dashboard/*.js|css|html et /contenu.js sont servis avec
+// Cache-Control: no-store (les assets restent vérifiables par curl -I).
+app.use((req, res, next) => {
+  if (req.path === '/dashboard.html' || req.path.startsWith('/dashboard/') || req.path === '/contenu.js') {
+    res.set('Cache-Control', 'no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }
+  next();
+});
+
 // Service du dashboard Social Studio
 app.get('/dashboard.html', (req, res) => {
   const dashboardPath = path.join(ROOT_DIR, 'dashboard', 'dashboard.html');
   if (fs.existsSync(dashboardPath)) {
+    res.set('Cache-Control', 'no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.sendFile(dashboardPath);
   } else {
     res.status(404).send('Dashboard introuvable.');
@@ -1239,6 +1339,10 @@ async function executerPublication(body, ciblesForcees) {
     const erreursBuffer = [];
     const erreursComposio = [];
     const textesEnvoyes = [];
+    // ═══ LOT D — contexte session Composio : VIVANT par requête de publication.
+    // Un session.id capturé sur un réseau est repassé aux appels outils suivants
+    // de la MÊME requête (ex. FB → IG) ; absent → aucun champ session_id.
+    const sessionCtx = {};
 
     for (const platform of autorises) {
       const texte = textes[platform] || '';
@@ -1249,7 +1353,8 @@ async function executerPublication(body, ciblesForcees) {
         const copie = ((body.copies || {})[platform]) || {};
         const rep = await publierViaComposio({
           reseau: platform, produit, produitNom, texte, mediaUrl,
-          lien: copie.link || '', alt: copie.alt || ''
+          lien: copie.link || '', alt: copie.alt || '',
+          session: sessionCtx
         });
         if (rep.ok) {
           resultats.push({
