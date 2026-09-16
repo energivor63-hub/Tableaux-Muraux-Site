@@ -1197,22 +1197,30 @@ async function executerPublication(body, ciblesForcees) {
 
     // 4 ─ GARDE-FOU ANTI-DOUBLON (même réseau < 24 h, sauf « Forcer »)
     const refus = [];
+    const autorises = [];
     platforms.forEach((p) => {
       const etat = verifierAntiDoublon(produitCles, p, forcer);
       if (etat.bloque) {
-        refus.push({ reseau: p, message: etat.message, heures: etat.heures, date: (etat.derniere && etat.derniere.date) || null });
+        refus.push({ reseau: p, message: etat.message, heures: etat.heures, date: (etat.derniere && (etat.derniere.isoDate || etat.derniere.date)) || null, isoDate: (etat.derniere && (etat.derniere.isoDate || etat.derniere.date)) || null });
+      } else {
+        autorises.push(p);
       }
     });
     if (refus.length) {
       journaliserIntegration({
         type: 'garde-fou', integrateur: 'anti-doublon', reseau: refus.map((r) => r.reseau).join(', '),
         produit, produitNom, statut: 'refus', message: refus.map((r) => r.message).join(' | '),
-        hashContenu: hashContenu(textes[refus[0].reseau] || ''), mediaUrl
+        hashContenu: hashContenu(textes[refus[0].reseau] || ''), mediaUrl,
+        isoDate: new Date().toISOString()
       });
+    }
+    if (!autorises.length) {
       return {
         success: false, error: refus[0].message, refusDoublon: refus,
-        erreursParIntegrateur: [], resultats: [],
-        reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes, forcer: false
+        erreursParIntegrateur: [],
+        resultats: refus.map((r) => ({ reseau: r.reseau, integrateur: 'anti-doublon', succes: false, statut: 'refus', message: r.message })),
+        reseauxPublies: [], reseauxEchoues: [], reseauxRefuses: refus.map((r) => r.reseau),
+        reseauxNonEnvoyes: [], variantes, forcer: false
       };
     }
 
@@ -1226,7 +1234,7 @@ async function executerPublication(body, ciblesForcees) {
     const erreursComposio = [];
     const textesEnvoyes = [];
 
-    for (const platform of platforms) {
+    for (const platform of autorises) {
       const texte = textes[platform] || '';
       textesEnvoyes.push({ reseau: platform, origine: origine[platform], hashContenu: hashContenu(texte), longueur: texte.length });
 
@@ -1334,25 +1342,40 @@ async function executerPublication(body, ciblesForcees) {
     const erreursPlates = [...erreursBuffer, ...erreursComposio];
     const reseauxPublies = resultats.filter((r) => r.succes).map((r) => r.reseau);
     const reseauxEchoues = resultats.filter((r) => !r.succes).map((r) => r.reseau);
+    const reseauxRefuses = refus.map((r) => r.reseau);
+    const reseauxNonEnvoyes = [];
+    const parReseau = {};
+    resultats.forEach((r) => {
+      parReseau[r.reseau] = { statut: r.succes ? 'succes' : 'echec', message: r.message };
+    });
+    refus.forEach((r) => {
+      parReseau[r.reseau] = { statut: 'refus', message: r.message };
+    });
 
     if (erreursPlates.length) {
-      // error = 1ʳᵉ erreur NON fusionnée : une erreur Composio n'est jamais
-      // masquée par un message Buffer (et inversement).
+      // error = 1re erreur NON fusionnee : une erreur Composio n'est jamais
+      // masquee par un message Buffer (et inversement).
+      // SUCCES PARTIEL : les reseaux autorises partis avec succes restent acquis
+      // meme si d'autres echouent ; les refus garde-fou sont joints (pas d'annulation).
       return {
-        success: false,
+        success: reseauxPublies.length > 0,
         error: erreursPlates[0],
         errors: erreursPlates,
         erreursParIntegrateur,
-        resultats, reseauxPublies, reseauxEchoues, postUrls, variantes, textesEnvoyes,
+        refusDoublon: refus,
+        resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
+        parReseau, postUrls, variantes, textesEnvoyes,
         produit, produitNom, mediaUrl
       };
     }
     return {
       success: true,
-      platform: platforms.join(','),
-      message: `Publié via ${[...new Set(resultats.map((r) => (r.integrateur === 'buffer' ? 'Buffer (board officiel)' : 'Composio')))].join(' + ')}`,
+      platform: autorises.join(','),
+      message: `Publie via ${[...new Set(resultats.map((r) => (r.integrateur === 'buffer' ? 'Buffer (board officiel)' : 'Composio')))].join(' + ')}`,
       erreursParIntegrateur: [],
-      resultats, reseauxPublies, reseauxEchoues, postUrls, variantes, textesEnvoyes,
+      refusDoublon: refus,
+      resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
+      parReseau, postUrls, variantes, textesEnvoyes,
       produit, produitNom, mediaUrl
     };
 }
