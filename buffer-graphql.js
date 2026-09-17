@@ -30,8 +30,17 @@
 //                   ImageAssetInput { url: NON_NULL String, thumbnailUrl,
 //                   metadata: ImageMetadataInput { altText: NON_NULL String, … } }
 //   aiAssisted      Boolean                         (disclosure IA)
-//   metadata        PostInputMetaData { pinterest: PinterestPostMetadataInput {
-//                   boardServiceId: String, title: String, url: String }, … }
+//   metadata        PostInputMetaData (type PAR RÉSEAU — introspection live 2026-09-17 :
+//                   PAS de champ type sur CreatePostInput lui-même) :
+//                     facebook  → FacebookPostMetadataInput.type : NON_NULL PostTypeFacebook
+//                                 (ENUM : post, reel, story)
+//                     instagram → InstagramPostMetadataInput.type : NON_NULL PostType
+//                                 (ENUM : carousel, event, ghost_post, offer, post, reel,
+//                                 short, story, thread, whats_new)
+//                     pinterest → PinterestPostMetadataInput { boardServiceId, title, url }
+//                                 — AUCUN champ type (rien à ajouter pour Pinterest)
+//                   Erreur réelle sans lui (17/09/2026, dashboard) : « Invalid post:
+//                   Instagram/Facebook posts require a type (post, story, or reel) ».
 //   (aussi présents, non utilisés : saveToDraft, draftId, dueAt, ideaId,
 //    source, tagIds[TagId])
 // RÉPONSE : Mutation.createPost → PostActionPayload (union) :
@@ -219,6 +228,16 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
     input.metadata = { pinterest: { boardServiceId: board.serviceId } };
     if (titrePin) input.metadata.pinterest.title = titrePin;
     if (lien) input.metadata.pinterest.url = lien; // lien de destination du site
+  } else if (reseau === 'facebook' || reseau === 'instagram') {
+    // INTROSPECTION LIVE 2026-09-17 : le champ type est NON_NULL dans les
+    // métadonnées PAR RÉSEAU (PAS sur CreatePostInput lui-même). Sans lui :
+    // « Invalid post: Instagram/Facebook posts require a type (post, story, or reel) ».
+    //   Facebook  → metadata.facebook.type  : NON_NULL PostTypeFacebook (enum : post, reel, story)
+    //   Instagram → metadata.instagram.type : NON_NULL PostType (enum : carousel, event,
+    //               ghost_post, offer, post, reel, short, story, thread, whats_new)
+    // Valeur du POST STANDARD = 'post' (présente dans les 2 enums).
+    // Pinterest : PinterestPostMetadataInput n'a PAS de champ type → rien à ajouter.
+    input.metadata = { [reseau]: { type: 'post' } };
   }
   const { data } = await requeteGraphQL({ env, query: MUTATION_CREATE_POST, variables: { input } });
   const outcome = data && data.createPost;
