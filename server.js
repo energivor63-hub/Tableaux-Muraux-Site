@@ -759,6 +759,17 @@ function extraireFbtraceId(corps) {
   } catch (e) { return null; }
 }
 
+/** Code d'erreur présent dans un corps (Meta OU Composio, imbriqué ou plat) —
+ * journalisé à côté du fbtrace_id pour tout échec classifié (exigence rapport :
+ * « code Meta + fbtrace_id » dans les causes reconnexion ET permissions). */
+function extraireCodeMeta(corps) {
+  try {
+    const brut = JSON.stringify(corps === undefined || corps === null ? '' : corps);
+    const m = brut.match(/"code"\s*:\s*(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  } catch (e) { return null; }
+}
+
 /** ═══ LOT D — extraction d'un session.id Composio (connexion multi-étapes). ═══
  * Cherche session.id / session_id dans la réponse (profondeur incluse).
  * Renvoie null si absent : JAMAIS bloquant, rétrocompatibilité totale. */
@@ -783,33 +794,48 @@ function extraireSessionComposio(corps) {
 }
 
 /**
- * ═══ LOT B — CLASSIFICATEUR 401 : DÉCONNEXION FOURNISSEUR ≠ CLÉ COMPOSIO ═══
- * Un HTTP 401 dont le corps transporte une erreur OAuth Facebook/Instagram
- * (OAuthException, code 190, session invalidée) signifie que le COMPTE
- * Facebook/Instagram est déconnecté chez Composio : la clé COMPOSIO_API_KEY,
- * elle, fonctionne. « Clé invalide » est réservé aux codes Composio 801/812.
+ * ═══ LOT B — CLASSIFICATEUR : DÉCONNEXION FOURNISSEUR ≠ CLÉ COMPOSIO ≠ PERMISSIONS ═══
+ * Le classifieur est appliqué QUEL QUE SOIT le statut HTTP (le corps Meta peut
+ * arriver dans un 200 successful:false, un 400 ou un 500 — sinon le corps BRUT
+ * fuit dans la puce affichée).
+ * « reconnectez-le » UNIQUEMENT si la session/token Meta est réellement morte :
+ *   code 190, OU error_subcode 460, OU « session has been invalidated ».
+ * Meta #200 (OAuthException + code 200) = PERMISSIONS PAGES manquantes (page
+ * non sélectionnée / scopes publication absents) → consigne Connect Account,
+ * JAMAIS « reconnectez-le » (reconnecter ne change rien aux permissions).
+ * « Clé COMPOSIO_API_KEY invalide » reste réservé aux codes Composio 801/812.
  */
 function cause401Composio(corps, message) {
-  const txt = [message || '', JSON.stringify(corps === undefined || corps === null ? '' : corps)].join(' ');
+  const brut = (() => {
+    try { return JSON.stringify(corps === undefined || corps === null ? '' : corps); }
+    catch (e) { return ''; }
+  })();
+  const txt = [message || '', brut].join(' ');
   const trace = extraireFbtraceId(corps);
-  const deconnexionFournisseur =
-    /OAuthException/i.test(txt) ||
-    /"code"\s*:\s*190|code["']?\s*[:=]\s*190/.test(txt) ||
-    /session has been invalidated/i.test(txt) ||
-    /Error validating access token/i.test(txt) ||
-    /The access token could not be decoded|access token.*(expired|invalid)/i.test(txt);
-  if (deconnexionFournisseur) {
+  // Codes Meta collectés : « code » imbriqué/plat dans le corps JSON + formats
+  // « (#190) » / « (#200) » en tête de message Meta.
+  const codes = [];
+  let mm;
+  const reJson = /"code"\s*:\s*(\d+)/g;
+  while ((mm = reJson.exec(brut)) !== null) codes.push(parseInt(mm[1], 10));
+  const reMessage = /\(\s*#(\d+)\s*\)/g;
+  while ((mm = reMessage.exec(txt)) !== null) codes.push(parseInt(mm[1], 10));
+  const mSub = brut.match(/"error_subcode"\s*:\s*(\d+)/);
+  const subcode = mSub ? parseInt(mSub[1], 10) : null;
+  const sessionInvalide = /session has been invalidated/i.test(txt);
+  if (codes.includes(190) || subcode === 460 || sessionInvalide) {
     return {
       message: 'Compte Facebook/Instagram déconnecté chez Composio : reconnectez-le (Toolkits → Connected accounts → Reconnect)' + (trace ? ` [fbtrace_id: ${trace}]` : '') + '.',
       fbtraceId: trace
     };
   }
-  const codeComposio = (() => {
-    try {
-      const m = JSON.stringify(corps || '').match(/"code"\s*:\s*(\d+)/);
-      return m ? parseInt(m[1], 10) : null;
-    } catch (e) { return null; }
-  })();
+  if (codes.includes(200)) {
+    return {
+      message: 'Permissions Pages manquantes : refaites Connect Account en cochant pages_read_engagement + pages_manage_posts et en sélectionnant la Page cible (code Meta 200)' + (trace ? ` [fbtrace_id: ${trace}]` : '') + '.',
+      fbtraceId: trace
+    };
+  }
+  const codeComposio = codes.length ? codes[0] : null;
   if (codeComposio === 801 || codeComposio === 812) {
     return {
       message: `Clé COMPOSIO_API_KEY invalide ou expirée (code Composio ${codeComposio}) — régénérez-la sur app.composio.dev.`,
@@ -1090,10 +1116,44 @@ function composioEstSucces(reponse) {
   return true;
 }
 
+/** ═══ FIX PUBLICATION IG (2026-09) — extraction ROBUSTE du creation_id du container ═══
+ * Formes acceptées, dans l'ordre (1ʳᵉ = forme RÉELLE Composio observée en production :
+ * {successful:true, data:{id:"178…"}}) :
+ *   corps.data.id · corps.data.data.id · corps.data.creation_id · corps.id ·
+ *   repli regex "id"\s*:\s*"(\d+)" sur le corps JSON sérialisé.
+ * Retourne null si RIEN n'est exploitable : l'appel publish ne part PAS
+ * (JAMAIS d'INSTAGRAM_CREATE_POST sans creation_id). */
+function extraireCreationIdContainer(corps) {
+  const c = corps && typeof corps === 'object' ? corps : null;
+  const candidats = [
+    c && c.data && c.data.id,
+    c && c.data && c.data.data && c.data.data.id,
+    c && c.data && c.data.creation_id,
+    c && c.id
+  ];
+  for (const v of candidats) {
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+  }
+  try {
+    const m = JSON.stringify(corps || '').match(/"id"\s*:\s*"(\d+)"/);
+    if (m) return m[1];
+  } catch (e) { /* corps non sérialisable */ }
+  return null;
+}
+
 /**
  * Publication via Composio (Facebook / Instagram) — essaie les slugs connus,
  * JOURNALISE CHAQUE RÉPONSE (statut HTTP + corps JSON + message) dans
  * journal_integrations.json, et renvoie une cause LISIBLE en cas d'échec.
+ *
+ * ═══ FIX IG — flux DEUX ÉTAPES obligatoire (2026-09) ═══
+ * Meta n'accepte pas de publication directe : INSTAGRAM_CREATE_MEDIA_CONTAINER
+ * crée un container qui renvoie un creation_id, puis INSTAGRAM_CREATE_POST
+ * publie ce container avec creation_id. Invariants testés :
+ *   • JAMAIS d'appel publish sans creation_id (échec explicite sinon) ;
+ *   • JAMAIS de statut « succes » sans publish réel : le container n'est
+ *     journalisé qu'en « etape » (sans publish il reste un brouillon Meta qui
+ *     expire < 24 h) et le garde-fou anti-doublon ignore « etape ».
  */
 async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl, lien, alt, session }) {
   const slugs = COMPOSIO_SLUGS[reseau] || [];
@@ -1125,55 +1185,124 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
   }
   const args = argumentsComposioSync(reseau, { texte, mediaUrl, lien, alt, igUserId });
   let dernier = null;
-  for (const slug of slugs) {
+
+  /** Construit l'entrée de journal d'un appel outil (structure identique partout). */
+  const entreeJournal = (slug, reponse, argsEtape, extra) => ({
+    type: 'publication',
+    integrateur: 'composio',
+    reseau: LABEL_RESEAU[reseau] || reseau,
+    produit,
+    produitNom,
+    action: slug,
+    endpoint: reponse.endpoint,
+    statut: extra.statut,
+    httpStatus: reponse.httpStatus,
+    corps: corpsMasque(reponse.corps),
+    message: extra.message || '',
+    cause: extra.cause || null,
+    // FIX classifieur : code + fbtrace_id Meta journalisés pour tout échec
+    // classifié (reconnexion ET permissions) ; LOT D : session Composio ;
+    // NOUVEAU CONTRAT : entity_id masqué 4+4 (voisin de session et du
+    // connected_account_id déjà présents) ; FIX IG : creation_id du container
+    // journalisé (traçabilité container → publish).
+    metaCode: extraireCodeMeta(reponse.corps) || undefined,
+    fbtraceId: extraireFbtraceId(reponse.corps) || undefined,
+    session: (session && session.id) || undefined,
+    entityId: (() => {
+      const id = String(process.env.COMPOSIO_ENTITY_ID || '').trim();
+      return id ? (id.length <= 8 ? '***' : id.slice(0, 4) + '…' + id.slice(-4)) : undefined;
+    })(),
+    creationId: extra.creationId || undefined,
+    mediaUrl,
+    hashContenu: hashContenu(texte),
+    contenu: texte,
+    payload: payloadJournalise(slug, reponse.requete || argsEtape, texte)
+  });
+
+  /** Un appel Composio → { reponse, ok, messageBrut, cause } (fetch + timeout). */
+  const appel = async (slug, argsEtape) => {
     let reponse;
     try {
-      reponse = await appelerComposio(slug, args, session);
+      reponse = await appelerComposio(slug, argsEtape, session);
     } catch (e) {
-      reponse = { endpoint: `${COMPOSIO_BASE}/tools/execute/${slug}`, httpStatus: 0, corps: { erreur: e.message }, requete: args };
+      reponse = { endpoint: `${COMPOSIO_BASE}/tools/execute/${slug}`, httpStatus: 0, corps: { erreur: e.message }, requete: argsEtape };
     }
     // ═══ LOT D — capture d'un session.id renvoyé par Composio : stocké dans le
     // contexte de la requête (sessionCtx partagé entre réseaux) et repassé aux
-    // appels outils SUIVANTS de la MÊME publication (ex. IG container → publish).
-    // Absent → rien (rétrocompatibilité) ; JAMAIS bloquant.
+    // appels outils SUIVANTS de la MÊME publication (ex. FB → IG container →
+    // IG publish). Absent → rien (rétrocompatibilité) ; JAMAIS bloquant.
     const idSession = extraireSessionComposio(reponse.corps);
     if (idSession && session && !session.id) session.id = idSession;
     const ok = composioEstSucces(reponse);
     const messageBrut = extraireMessageComposio(reponse.corps);
     const cause = ok ? null : causeComposio(reponse.httpStatus, reponse.corps, messageBrut);
-    // 📓 JOURNALISATION OBLIGATOIRE de toute réponse Composio (statut HTTP + corps JSON + message)
-    journaliserIntegration({
-      type: 'publication',
-      integrateur: 'composio',
-      reseau: LABEL_RESEAU[reseau] || reseau,
-      produit,
-      produitNom,
-      action: slug,
-      endpoint: reponse.endpoint,
-      statut: ok ? 'succes' : 'echec',
-      httpStatus: reponse.httpStatus,
-      corps: corpsMasque(reponse.corps),
-      message: messageBrut,
-      cause,
-      // LOT B : fbtrace_id Meta journalisé quand présent ; LOT D : session
-      // Composio ; NOUVEAU CONTRAT : entity_id masqué 4+4 (voisin de session
-      // et du connected_account_id déjà présent dans le payload journalisé).
-      fbtraceId: extraireFbtraceId(reponse.corps) || undefined,
-      session: (session && session.id) || undefined,
-      entityId: (() => {
-        const id = String(process.env.COMPOSIO_ENTITY_ID || '').trim();
-        return id ? (id.length <= 8 ? '***' : id.slice(0, 4) + '…' + id.slice(-4)) : undefined;
-      })(),
-      mediaUrl,
-      hashContenu: hashContenu(texte),
-      contenu: texte,
-      payload: payloadJournalise(slug, reponse.requete || args, texte)
-    });
-    console.log(`[composio] ${reseau} → ${slug} : HTTP ${reponse.httpStatus} ${ok ? 'succes' : 'echec'}${idSession ? ` | session=${idSession}` : ''}`);
-    if (ok) {
-      return { ok: true, slug, httpStatus: reponse.httpStatus, corps: reponse.corps, endpoint: reponse.endpoint };
+    return { reponse, ok, messageBrut, cause };
+  };
+
+  // ═══ IG — ÉTAPE 1 : container (OBLIGATOIRE : il seul renvoie le creation_id). ═══
+  if (reseau === 'instagram') {
+    const slugContainer = slugs[0] || 'INSTAGRAM_CREATE_MEDIA_CONTAINER';
+    const slugPublish = slugs[1] || 'INSTAGRAM_CREATE_POST';
+    const etapeContainer = await appel(slugContainer, args);
+    if (!etapeContainer.ok) {
+      journaliserIntegration(entreeJournal(slugContainer, etapeContainer.reponse, args, {
+        statut: 'echec', message: etapeContainer.messageBrut, cause: etapeContainer.cause
+      }));
+      console.log(`[composio] ${reseau} → ${slugContainer} : HTTP ${etapeContainer.reponse.httpStatus} echec${session && session.id ? ` | session=${session.id}` : ''}`);
+      return {
+        ok: false, slug: slugContainer, httpStatus: etapeContainer.reponse.httpStatus,
+        corps: etapeContainer.reponse.corps, cause: etapeContainer.cause,
+        message: etapeContainer.messageBrut, endpoint: etapeContainer.reponse.endpoint
+      };
     }
-    dernier = { ok: false, slug, httpStatus: reponse.httpStatus, corps: reponse.corps, cause, message: messageBrut, endpoint: reponse.endpoint };
+    const creationId = extraireCreationIdContainer(etapeContainer.reponse.corps);
+    if (!creationId) {
+      const causeClaire = "creation_id introuvable dans la réponse container — publication IMPOSSIBLE : aucun INSTAGRAM_CREATE_POST envoyé (sans creation_id, Meta répond « Following fields are missing: {'creation_id'} » et le container reste un brouillon qui expire < 24 h).";
+      journaliserIntegration(entreeJournal(slugContainer, etapeContainer.reponse, args, {
+        statut: 'echec', message: causeClaire, cause: causeClaire
+      }));
+      console.log(`[composio] ${reseau} → ${slugContainer} : HTTP ${etapeContainer.reponse.httpStatus} etape | creation_id introuvable → publish NON envoyé`);
+      return {
+        ok: false, slug: slugContainer, httpStatus: etapeContainer.reponse.httpStatus,
+        corps: etapeContainer.reponse.corps, cause: causeClaire, message: causeClaire,
+        endpoint: etapeContainer.reponse.endpoint
+      };
+    }
+    // Journalisé en « etape » : JAMAIS « succes » — sans publish réel le
+    // container n'est qu'un brouillon Meta qui expire < 24 h.
+    journaliserIntegration(entreeJournal(slugContainer, etapeContainer.reponse, args, {
+      statut: 'etape',
+      message: `Container créé (creation_id=${creationId}) — publication en cours via ${slugPublish}`,
+      creationId
+    }));
+    console.log(`[composio] ${reseau} → ${slugContainer} : HTTP ${etapeContainer.reponse.httpStatus} etape | creation_id=${creationId}${session && session.id ? ` | session=${session.id}` : ''}`);
+    // ÉTAPE 2 : publish AVEC creation_id (aucun repli : le container existe déjà).
+    const argsPublish = { ...args, creation_id: creationId };
+    const etapePublish = await appel(slugPublish, argsPublish);
+    journaliserIntegration(entreeJournal(slugPublish, etapePublish.reponse, argsPublish, {
+      statut: etapePublish.ok ? 'succes' : 'echec',
+      message: etapePublish.messageBrut,
+      cause: etapePublish.cause,
+      creationId
+    }));
+    console.log(`[composio] ${reseau} → ${slugPublish} : HTTP ${etapePublish.reponse.httpStatus} ${etapePublish.ok ? 'succes' : 'echec'} | creation_id=${creationId}`);
+    return etapePublish.ok
+      ? { ok: true, slug: slugPublish, httpStatus: etapePublish.reponse.httpStatus, corps: etapePublish.reponse.corps, endpoint: etapePublish.reponse.endpoint }
+      : { ok: false, slug: slugPublish, httpStatus: etapePublish.reponse.httpStatus, corps: etapePublish.reponse.corps, cause: etapePublish.cause, message: etapePublish.messageBrut, endpoint: etapePublish.reponse.endpoint };
+  }
+  // ── Facebook : slugs de publication en boucle historique (1 slug validé). ──
+  for (const slug of slugs) {
+    const etape = await appel(slug, args);
+    journaliserIntegration(entreeJournal(slug, etape.reponse, args, {
+      statut: etape.ok ? 'succes' : 'echec',
+      message: etape.messageBrut,
+      cause: etape.cause
+    }));
+    console.log(`[composio] ${reseau} → ${slug} : HTTP ${etape.reponse.httpStatus} ${etape.ok ? 'succes' : 'echec'}${session && session.id ? ` | session=${session.id}` : ''}`);
+    if (etape.ok) {
+      return { ok: true, slug, httpStatus: etape.reponse.httpStatus, corps: etape.reponse.corps, endpoint: etape.reponse.endpoint };
+    }
+    dernier = { ok: false, slug, httpStatus: etape.reponse.httpStatus, corps: etape.reponse.corps, cause: etape.cause, message: etape.messageBrut, endpoint: etape.reponse.endpoint };
   }
   return dernier || { ok: false, httpStatus: 0, cause: 'Aucune action Composio configurée pour ce réseau.', corps: null };
 }
