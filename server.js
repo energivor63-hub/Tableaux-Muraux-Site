@@ -599,7 +599,17 @@ function masquerTexte(texte) {
   return t;
 }
 
-/** Journal OBLIGATOIRE (journal_integrations.json) : entrée horodatée en tête du tableau. */
+/** Réponse brute (GraphQL/HTTP) pour le journal : secrets masqués puis TRONQUÉE
+ * à 2000 caractères (masquage AVANT troncature : jamais de secret tronqué). */
+function masquerReponseBrute(reponseBrute) {
+  if (!reponseBrute) return undefined;
+  return masquerTexte(String(reponseBrute)).slice(0, 2000);
+}
+
+/** Journal OBLIGATOIRE (journal_integrations.json) : entrée horodatée en TÊTE
+ * du tableau. ORDRE D'INSERTION DOCUMENTÉ : `unshift` → les entrées les PLUS
+ * RÉCENTES sont au DÉBUT du fichier (l'entrée du 17/09 n'apparaît donc PAS en
+ * fin de fichier : un `-Tail` ne montre que les entrées les plus anciennes). */
 function journaliserIntegration(entree) {
   try {
     const chemin = path.join(ROOT_DIR, 'journal_integrations.json');
@@ -1583,6 +1593,9 @@ async function executerPublication(body, ciblesForcees) {
             : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
           cause: outcome ? null : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
           code: erreurBuf && erreurBuf.code ? erreurBuf.code : undefined,
+          // reponseBrute PAR RÉSEAU : réponse GraphQL brute (union typée /
+          // errors[]) tronquée 2000 car., secrets masqués.
+          reponseBrute: masquerReponseBrute((outcome && outcome.reponseBrute) || (erreurBuf && erreurBuf.reponseBrute)),
           mediaUrl, hashContenu: hashContenu(texte), contenu: texte,
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
@@ -1599,6 +1612,7 @@ async function executerPublication(body, ciblesForcees) {
             action: 'createPost', httpStatus: 200,
             message: `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId}`,
             postId: outcome.postId,
+            reponseBrute: masquerReponseBrute(outcome.reponseBrute),
             board: outcome.board || undefined
           });
         } else {
@@ -1607,7 +1621,9 @@ async function executerPublication(body, ciblesForcees) {
           resultats.push({
             reseau: platform, integrateur: 'buffer', succes: false,
             action: 'createPost', message,
-            cause: (erreurBuf && erreurBuf.message) || null
+            cause: (erreurBuf && erreurBuf.message) || null,
+            code: erreurBuf && erreurBuf.code ? erreurBuf.code : undefined,
+            reponseBrute: masquerReponseBrute(erreurBuf && erreurBuf.reponseBrute)
           });
         }
         journal.unshift({
@@ -1673,8 +1689,17 @@ async function executerPublication(body, ciblesForcees) {
       // masquee par un message Buffer (et inversement).
       // SUCCES PARTIEL : les reseaux autorises partis avec succes restent acquis
       // meme si d'autres echouent ; les refus garde-fou sont joints (pas d'annulation).
+      // `succesPartiel` + `message` explicites : le dashboard NE DOIT PAS afficher
+      // « Publication réussie » global quand un reseau a echoue (bug du faux
+      // succes Instagram du 17/09/2026) → il affiche « Publication partielle »
+      // avec Diffusé sur = reseauxPublies UNIQUEMENT + la cause par réseau.
+      const partiel = reseauxPublies.length > 0;
       return {
-        success: reseauxPublies.length > 0,
+        success: partiel,
+        succesPartiel: partiel,
+        message: partiel
+          ? `Publication PARTIELLE — réussis : ${reseauxPublies.join(' + ') || 'aucun'} · en échec : ${[...reseauxEchoues, ...reseauxRefuses].join(' + ') || 'aucun'}`
+          : null,
         error: erreursPlates[0],
         errors: erreursPlates,
         erreursParIntegrateur,
@@ -1686,6 +1711,7 @@ async function executerPublication(body, ciblesForcees) {
     }
     return {
       success: true,
+      succesPartiel: false,
       platform: autorises.join(','),
       message: `Publie via ${[...new Set(resultats.map((r) => (r.integrateur === 'buffer' ? 'Buffer (GraphQL)' : 'Composio')))].join(' + ')}`,
       erreursParIntegrateur: [],

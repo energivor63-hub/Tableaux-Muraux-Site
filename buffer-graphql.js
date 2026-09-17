@@ -43,11 +43,30 @@
 //                   Instagram/Facebook posts require a type (post, story, or reel) ».
 //   (aussi présents, non utilisés : saveToDraft, draftId, dueAt, ideaId,
 //    source, tagIds[TagId])
-// RÉPONSE : Mutation.createPost → PostActionPayload (union) :
+//
+// ══ CHAMPS OBLIGATOIRES DÉCOUVERTS EN ERREUR RÉELLE (jamais supposés) ═══
+// • metadata.instagram.shouldShareToFeed : NON_NULL Boolean! — OBLIGATOIRE.
+//   Preuve EXACTE, journal_integrations.json entrée Instagram du 17/09/2026
+//   21:29:23 (HTTP 200, transport GraphQL) :
+//     « Variable "$input" got invalid value { type: "post" } at
+//       "input.metadata.instagram"; Field "shouldShareToFeed" of required type
+//       "Boolean!" was not provided. »
+//   → cause réelle du FAUX SUCCÈS Instagram du 17/09 (aucun post IG côté
+//     Buffer alors que le dashboard affichait un succès). Valeur envoyée :
+//     true (partage aussi dans le fil du compte — vraie publication IG).
+//
+// ═══ RÉPONSE : UNION TYPÉE (jamais conclure sur la seule présence de data) ══
+// Mutation.createPost → PostActionPayload (union) :
 //   PostActionSuccess { post { id text status dueAt channel { id name service } } }
-//   | MutationError { message } (réponse HTTP 200 quand même !)
+//   | MutationError { message } | InvalidInputError { message } | … (HTTP 200
+//   DANS LES DEUX CAS : la variante erreur arrive dans data.createPost, PAS
+//   dans errors[] !)
+// → le succès n'est conclu QUE si __typename = PostActionSuccess ET post.id
+//   présent ; toute autre variante = échec avec cause = message de la variante.
 // ERREURS TRANSPORT : { errors: [{ message, extensions… }] } possible sur HTTP 200
 //   → TOUJOURS inspecter .errors avant data.
+// → reponseBrute (JSON tronqué 2000 car., secrets masqués côté server.js) est
+//   renvoyée/journalisée PAR RÉSEAU pour chaque createPost.
 // ═══════════════════════════════════════════════════════════════════════
 
 import { resolvePinterestBoard } from './buffer-pinterest.js';
@@ -67,22 +86,34 @@ const OVERRIDE_ENV = {
 
 let canauxCache = null; // { map: {facebook: id, instagram: id, pinterest: id}, resolvedAt }
 
-/** Erreur Buffer GraphQL structurée (message + code optionnel + httpStatus). */
+/** Erreur Buffer GraphQL structurée (message + code optionnel + httpStatus
+ * + reponseBrute : variante/réponse brute TRONQUÉE à 2000 caractères pour le
+ * journal — secrets masqués côté server.js avant écriture). */
 export class BufferGraphqlError extends Error {
-  constructor(message, { code, httpStatus, channelId } = {}) {
+  constructor(message, { code, httpStatus, channelId, reponseBrute } = {}) {
     super(message);
     this.name = 'BufferGraphqlError';
     this.code = code || undefined;
     this.httpStatus = httpStatus || undefined;
     this.channelId = channelId || undefined;
+    this.reponseBrute = reponseBrute || undefined;
   }
 }
+
+/** Réponse brute pour le journal : JSON sérialisé, TRONQUÉ à 2000 caractères. */
+function reponseBruteTronquee(valeur) {
+  try { return JSON.stringify(valeur === undefined ? null : valeur).slice(0, 2000); }
+  catch (e) { return String(valeur).slice(0, 2000); }
+}
+
 
 /**
  * Appel GraphQL POST unique : Authorization Bearer BUFFER_API_KEY, corps
  * { query, variables }. GraphQL renvoie HTTP 200 MÊME EN ERREUR → le statut
  * HTTP ne suffit JAMAIS : .errors est inspecté systématiquement.
- * Renvoie { httpStatus, data, errors }. Lève BufferGraphqlError sur errors[].
+ * Renvoie { httpStatus, data, errors, reponseBrute } (reponseBrute = réponse
+ * brute JSON TRONQUÉE à 2000 car., pour le journal par réseau).
+ * Lève BufferGraphqlError sur errors[] (avec reponseBrute attachée).
  */
 export async function requeteGraphQL({ env = process.env, query, variables = {} } = {}) {
   const apiKey = String(env.BUFFER_API_KEY || '').trim();
@@ -105,17 +136,18 @@ export async function requeteGraphQL({ env = process.env, query, variables = {} 
   const texte = await res.text();
   let json;
   try { json = JSON.parse(texte); } catch (e) { json = { brut: texte.slice(0, 1500) }; }
+  const reponseBrute = reponseBruteTronquee(json); // journal par réseau (tronqué 2000)
   const errors = Array.isArray(json.errors) ? json.errors : [];
   // HTTP 200 + errors[] = erreur GraphQL réelle (jamais considérer 200 comme succès)
   if (errors.length) {
     const details = errors.map((e) => e && e.message ? String(e.message) : JSON.stringify(e)).join(' ; ');
     const code = errors[0] && errors[0].extensions && errors[0].extensions.code;
-    throw new BufferGraphqlError(`Buffer GraphQL errors[] (HTTP ${res.status}) : ${details}`, { code, httpStatus: res.status });
+    throw new BufferGraphqlError(`Buffer GraphQL errors[] (HTTP ${res.status}) : ${details}`, { code, httpStatus: res.status, reponseBrute });
   }
   if (!res.ok) {
-    throw new BufferGraphqlError(`Buffer HTTP ${res.status} : ${String(json.brut || texte).slice(0, 300)}`, { httpStatus: res.status });
+    throw new BufferGraphqlError(`Buffer HTTP ${res.status} : ${String(json.brut || texte).slice(0, 300)}`, { httpStatus: res.status, reponseBrute });
   }
-  return { httpStatus: res.status, data: json.data || null, errors: [] };
+  return { httpStatus: res.status, data: json.data || null, errors: [], reponseBrute };
 }
 
 // Query canaux : channels(input:{organizationId}) { id name service } —
@@ -184,13 +216,25 @@ export async function resoudreCanalReseau({ reseau, env = process.env } = {}) {
   return canalId;
 }
 
+// Typenames de la variante ERREUR de l'union PostActionPayload (introspection
+// live 2026-09-17 + guide « Your First Post » : createPost → PostActionSuccess
+// | MutationError). Toute variante HORS succès = échec (jamais de faux succès).
+const TYPENAMES_ERREUR = new Set([
+  'MutationError', 'InvalidInputError', 'UnauthorizedError', 'NotFoundError',
+  'LimitReachedError', 'UnexpectedError', 'RestProxyError'
+]);
+
 // Mutation createPost — forme EXACTE (introspection live 2026-09-17 + guide
 // « Your First Post » + exemple « Create Image Post »). Réponse en union :
 // PostActionSuccess { post … } | MutationError { message } (+ variantes
 // d'erreurs validées en live le 07/09/2026 — buffer-pinterest.js v5 FINAL).
+// __typename est DEMANDÉ explicitement : sans lui, impossible de distinguer la
+// variante succès de la variante erreur (les DEUX arrivent dans data.createPost
+// avec HTTP 200 → cause du FAUX SUCCÈS Instagram du 17/09/2026).
 const MUTATION_CREATE_POST = `
   mutation CreatePostBuffer($input: CreatePostInput!) {
     createPost(input: $input) {
+      __typename
       ... on PostActionSuccess { post { id text status dueAt channel { id name service } } }
       ... on MutationError { message }
       ... on InvalidInputError { message }
@@ -210,8 +254,13 @@ const MUTATION_CREATE_POST = `
  *   IA) · assets [{ image: { url } }] (URL publique GitHub Pages, pré-vérifiée
  *   200 côté server.js) · altText optionnel · metadata.pinterest
  *   { boardServiceId, title, url } pour le ciblage du board officiel Pinterest.
- * Succès = post.id dans data.createPost (PostActionSuccess) ; échec = errors[]
- * ou MutationError → BufferGraphqlError (cause : message + code).
+ * SUCCÈS = variante SUCCÈS de l'union typée UNIQUEMENT :
+ *   data.createPost.__typename === 'PostActionSuccess' ET post.id présent.
+ * Tout le reste = BufferGraphqlError (cause = message de la variante + code) —
+ * y compris une variante erreur arrivée en HTTP 200 dans data.createPost
+ * (FAUX SUCCÈS Instagram du 17/09/2026 : data.createPost existait mais c'était
+ * la variante d'erreur ; l'ancien code concluait « succès » à tort).
+ * Renvoie { postId, status, dueAt, channel, channelId, reponseBrute }.
  */
 export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, env = process.env } = {}) {
   const input = {
@@ -238,23 +287,47 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
     // Valeur du POST STANDARD = 'post' (présente dans les 2 enums).
     // Pinterest : PinterestPostMetadataInput n'a PAS de champ type → rien à ajouter.
     input.metadata = { [reseau]: { type: 'post' } };
+    if (reseau === 'instagram') {
+      // NON_NULL Boolean! OBLIGATOIRE — preuve : erreur réelle du 17/09/2026
+      // 21:29:23 (journal_integrations.json) « Field "shouldShareToFeed" of
+      // required type "Boolean!" was not provided » (HTTP 200) ; sans lui AUCUN
+      // post Instagram n'était créé malgré le « succès » affiché.
+      input.metadata.instagram.shouldShareToFeed = true;
+    }
   }
-  const { data } = await requeteGraphQL({ env, query: MUTATION_CREATE_POST, variables: { input } });
+  const { data, reponseBrute } = await requeteGraphQL({ env, query: MUTATION_CREATE_POST, variables: { input } });
   const outcome = data && data.createPost;
-  if (!outcome) throw new BufferGraphqlError('Buffer : réponse createPost vide (ni PostActionSuccess ni MutationError)', { channelId });
-  if (outcome.message) {
-    // MutationError / InvalidInputError / UnauthorizedError / … → message lisible
-    throw new BufferGraphqlError(`Buffer createPost (${LABEL_RESEAU[reseau]}) : ${outcome.message}`, { channelId });
+  if (!outcome) {
+    throw new BufferGraphqlError('Buffer : réponse createPost vide (ni PostActionSuccess ni MutationError)', { channelId, reponseBrute });
+  }
+  // ── Parsing PAR VARIANTE (union typée) : succès UNIQUEMENT sur PostActionSuccess
+  const typename = outcome.__typename ? String(outcome.__typename) : null;
+  if (TYPENAMES_ERREUR.has(typename)) {
+    throw new BufferGraphqlError(
+      `Buffer createPost (${LABEL_RESEAU[reseau]}) : ${outcome.message || `variante ${typename} sans message`}`,
+      { channelId, code: typename, reponseBrute }
+    );
+  }
+  const varianteSucces = typename
+    ? typename === 'PostActionSuccess'
+    : (!outcome.message && !!(outcome.post && outcome.post.id)); // repli : __typename absent de la réponse
+  if (!varianteSucces) {
+    throw new BufferGraphqlError(
+      `Buffer createPost (${LABEL_RESEAU[reseau]}) : ${outcome.message || `variante non identifiable (__typename=${typename || 'absent'})`}`,
+      { channelId, code: typename || undefined, reponseBrute }
+    );
   }
   if (!outcome.post || !outcome.post.id) {
-    throw new BufferGraphqlError('Buffer : publication sans identifiant de post (PostActionSuccess.post.id absent)', { channelId });
+    // Variante succès MAIS sans identifiant : publication NON confirmée.
+    throw new BufferGraphqlError('Buffer : PostActionSuccess sans post.id — publication NON confirmée (aucun faux succès)', { channelId, code: typename || undefined, reponseBrute });
   }
   return {
     postId: outcome.post.id,
     status: outcome.post.status || null,
     dueAt: outcome.post.dueAt || null,
     channel: outcome.post.channel || null,
-    channelId
+    channelId,
+    reponseBrute
   };
 }
 
