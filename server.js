@@ -32,7 +32,8 @@ import {
   rewriteProductAtRank,
   commitAndPushSite
 } from './control-tower-engine.js';
-import { handlePinterestPublish } from './buffer-pinterest.js';
+// SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
+import { publierViaBufferGraphql } from './buffer-graphql.js';
 // 🛡️ Phase B — variantes par réseau + hash anti-doublon (légendes distinctes IG/FB/PIN)
 import { genererVariantes, titrePinterest, hashContenu } from './social-variants.js';
 // 💰 Synchro prix (ajout v2) — import ADDITIF : aucune fonction existante retouchée.
@@ -570,7 +571,20 @@ const COMPOSIO_SLUGS = {
   facebook: ['FACEBOOK_CREATE_POST'],
   instagram: ['INSTAGRAM_CREATE_MEDIA_CONTAINER', 'INSTAGRAM_CREATE_POST']
 };
-const INTEGRATEUR_RESEAU = { facebook: 'composio', instagram: 'composio', pinterest: 'buffer' };
+// ROUTAGE DES RÉSEAUX (Session 2026-09-17) :
+//   facebook + instagram + pinterest → Buffer GraphQL (createPost, mode shareNow).
+//   Composio reste EN PLACE mais NON ROUTÉ (future app Reddit) : les slugs FB/IG
+//   validés ci-dessous restent utilisables. Échappatoire de TEST uniquement :
+//   SOCIAL_ROUTAGE_COMPOSIO=facebook,instagram force ces réseaux vers Composio —
+//   utilisé par les suites registre/test_dashboard_composio.mjs et
+//   registre/test_dashboard_social.mjs (non-régression des lots B/C/D/E).
+const ROUTAGE_COMPOSIO_TESTS = new Set(String(process.env.SOCIAL_ROUTAGE_COMPOSIO || '')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+/** Intégrateur d'un réseau : 'buffer' par défaut, 'composio' si échappatoire test. */
+function integrateurPour(reseau) {
+  if ((reseau === 'facebook' || reseau === 'instagram') && ROUTAGE_COMPOSIO_TESTS.has(reseau)) return 'composio';
+  return 'buffer';
+}
 const LABEL_RESEAU = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest' };
 
 /** Masque toute clé/secrets avant journalisation (jamais de secret dans journal_integrations.json). */
@@ -1438,10 +1452,14 @@ async function executerPublication(body, ciblesForcees) {
     }
     const mediaUrl = verifMedia.url;
 
-    // 3 ─ Pré-vérification des clés (journalisée, puis échec rapide)
+    // 3 ─ Pré-vérification des clés (journalisée, puis échec rapide) —
+    //    routage-consciente : Buffer GraphQL exige BUFFER_API_KEY pour les 3
+    //    réseaux ; Composio (échappatoire de test) exige COMPOSIO_API_KEY.
     const manquantes = [];
-    if (platforms.some((p) => p === 'facebook' || p === 'instagram') && !process.env.COMPOSIO_API_KEY) manquantes.push('COMPOSIO_API_KEY');
-    if (platforms.includes('pinterest') && !process.env.BUFFER_API_KEY) manquantes.push('BUFFER_API_KEY');
+    [...new Set(platforms.map((p) => integrateurPour(p)))].forEach((integ) => {
+      if (integ === 'buffer' && !process.env.BUFFER_API_KEY) manquantes.push('BUFFER_API_KEY');
+      if (integ === 'composio' && !process.env.COMPOSIO_API_KEY) manquantes.push('COMPOSIO_API_KEY');
+    });
     if (manquantes.length) {
       journaliserIntegration({
         type: 'pre-vol', integrateur: 'config', reseau: platforms.join(', '), produit,
@@ -1500,10 +1518,11 @@ async function executerPublication(body, ciblesForcees) {
     for (const platform of autorises) {
       const texte = textes[platform] || '';
       textesEnvoyes.push({ reseau: platform, origine: origine[platform], hashContenu: hashContenu(texte), longueur: texte.length });
+      // Copies dashboard du réseau (lien de destination, alt text, titre Pinterest)
+      const copie = ((body.copies || {})[platform]) || {};
 
-      if (platform === 'facebook' || platform === 'instagram') {
+      if (integrateurPour(platform) === 'composio' && (platform === 'facebook' || platform === 'instagram')) {
         // ── Composio (Facebook / Instagram) : appel RÉEL + journalisation systématique
-        const copie = ((body.copies || {})[platform]) || {};
         const rep = await publierViaComposio({
           reseau: platform, produit, produitNom, texte, mediaUrl,
           lien: copie.link || '', alt: copie.alt || '',
@@ -1535,44 +1554,61 @@ async function executerPublication(body, ciblesForcees) {
           integrateur: 'composio',
           error: rep.ok ? undefined : rep.cause
         });
-      } else if (platform === 'pinterest') {
-        // ── Buffer (Pinterest) : board officiel OBLIGATOIRE + variante Pinterest
-        const bodyPin = {
-          ...body,
-          mediaUrl,
-          copies: {
-            ...(body.copies || {}),
-            pinterest: { ...(((body.copies || {}).pinterest) || {}), description: texte }
-          }
-        };
+      } else if (platform === 'facebook' || platform === 'instagram' || platform === 'pinterest') {
+        // ── Buffer GraphQL (createPost) : Facebook + Instagram + Pinterest.
+        // UNE mutation createPost par réseau avec SA variante de texte
+        // (genererVariantes inchangée) + média = URL publique GitHub Pages
+        // (pré-vérifiée 200 au-dessus) + mode shareNow (publication immédiate —
+        // le schéma n'expose PAS de « publishNow », cf. buffer-graphql.js).
+        // Pinterest : board officiel OBLIGATOIRE (résolu dans buffer-graphql.js).
         let outcome = null;
-        let erreurPin = null;
+        let erreurBuf = null;
         try {
-          outcome = await handlePinterestPublish({ body: bodyPin });
-        } catch (pinErr) {
-          erreurPin = pinErr.message;
+          outcome = await publierViaBufferGraphql({
+            reseau: platform, texte, mediaUrl,
+            lien: copie.link || '', alt: copie.alt || '', titrePin: copie.title || ''
+          });
+        } catch (bufErr) {
+          erreurBuf = bufErr;
         }
-        // 📓 journal intégrations (garde-fou anti-doublon Pinterest)
+        // 📓 journal intégrations (garde-fou 24 h + traçabilité) : intégrateur
+        // 'buffer', champs inchangés (statut, cause, secrets masqués) + channelIds
         journaliserIntegration({
-          type: 'publication', integrateur: 'buffer', reseau: LABEL_RESEAU.pinterest,
-          produit, produitNom, statut: outcome ? 'succes' : 'echec',
-          httpStatus: outcome ? 200 : null,
-          message: outcome ? `Épingle créée dans le board « ${outcome.board.name} »` : erreurPin,
-          cause: outcome ? null : erreurPin,
+          type: 'publication', integrateur: 'buffer', reseau: LABEL_RESEAU[platform],
+          produit, produitNom,
+          statut: outcome ? 'succes' : 'echec',
+          httpStatus: outcome ? 200 : ((erreurBuf && erreurBuf.httpStatus) || null),
+          message: outcome
+            ? `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode ${outcome.mode})`
+            : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
+          cause: outcome ? null : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
+          code: erreurBuf && erreurBuf.code ? erreurBuf.code : undefined,
           mediaUrl, hashContenu: hashContenu(texte), contenu: texte,
-          board: outcome ? { id: outcome.board.id, name: outcome.board.name, url: outcome.board.url } : null
+          channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
+            ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
+            : undefined,
+          mode: 'shareNow',
+          board: outcome && outcome.board
+            ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url }
+            : undefined
         });
         if (outcome) {
-          postUrls.pinterest = outcome.boardUrl;
+          if (platform === 'pinterest' && outcome.board && outcome.board.url) postUrls.pinterest = outcome.board.url;
           resultats.push({
-            reseau: 'pinterest', integrateur: 'buffer', succes: true,
-            message: `Publié via Buffer (Pinterest) dans le board « ${outcome.board.name} »`,
-            board: outcome.board
+            reseau: platform, integrateur: 'buffer', succes: true,
+            action: 'createPost', httpStatus: 200,
+            message: `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId}`,
+            postId: outcome.postId,
+            board: outcome.board || undefined
           });
         } else {
-          const message = `Buffer (Pinterest) : ${erreurPin}`;
+          const message = `Buffer GraphQL (${LABEL_RESEAU[platform]}) : ${(erreurBuf && erreurBuf.message) || 'Erreur inconnue'}`;
           erreursBuffer.push(message);
-          resultats.push({ reseau: 'pinterest', integrateur: 'buffer', succes: false, message, cause: erreurPin });
+          resultats.push({
+            reseau: platform, integrateur: 'buffer', succes: false,
+            action: 'createPost', message,
+            cause: (erreurBuf && erreurBuf.message) || null
+          });
         }
         journal.unshift({
           id: `pub_${Date.now()}_${platform}`,
@@ -1583,8 +1619,14 @@ async function executerPublication(body, ciblesForcees) {
           status: outcome ? 'published' : 'error',
           scheduleDate,
           integrateur: 'buffer',
-          board: outcome ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url } : undefined,
-          error: outcome ? undefined : erreurPin
+          mode: 'shareNow',
+          channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
+            ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
+            : undefined,
+          board: outcome && outcome.board
+            ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url }
+            : undefined,
+          error: outcome ? undefined : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue'
         });
       } else {
         const message = `Plateforme non supportée : ${platform}`;
@@ -1608,7 +1650,7 @@ async function executerPublication(body, ciblesForcees) {
     // Erreurs JAMAIS fusionnées : un bloc par intégrateur (Buffer ≠ Composio)
     const erreursParIntegrateur = [];
     if (erreursBuffer.length) {
-      erreursParIntegrateur.push({ integrateur: 'buffer', label: 'Buffer (Pinterest)', erreurs: erreursBuffer });
+      erreursParIntegrateur.push({ integrateur: 'buffer', label: 'Buffer (Facebook / Instagram / Pinterest)', erreurs: erreursBuffer });
     }
     if (erreursComposio.length) {
       erreursParIntegrateur.push({ integrateur: 'composio', label: 'Composio (Facebook / Instagram)', erreurs: erreursComposio });
@@ -1645,7 +1687,7 @@ async function executerPublication(body, ciblesForcees) {
     return {
       success: true,
       platform: autorises.join(','),
-      message: `Publie via ${[...new Set(resultats.map((r) => (r.integrateur === 'buffer' ? 'Buffer (board officiel)' : 'Composio')))].join(' + ')}`,
+      message: `Publie via ${[...new Set(resultats.map((r) => (r.integrateur === 'buffer' ? 'Buffer (GraphQL)' : 'Composio')))].join(' + ')}`,
       erreursParIntegrateur: [],
       refusDoublon: refus,
       resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,

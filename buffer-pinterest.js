@@ -1,10 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════
-// BUFFER PINTEREST — CIBLAGE DU BOARD OFFICIEL + PUBLICATION D'ÉPINGLE
+// BUFFER PINTEREST — CIBLAGE DU BOARD OFFICIEL (résolution + cache)
 // ═══════════════════════════════════════════════════════════════════════
 // SESSION 10 : toute épingle publiée via Buffer doit atterrir dans le board
 // officiel « Nos meilleures œuvres — art mural marocain ». JAMAIS de
 // publication sans board cible résolu (sinon erreur explicite « Tableau
 // Pinterest introuvable » au journal + toast dashboard).
+//
+// SESSION 2026-09-17 : la PUBLICATION (mutation createPost unifiée
+// facebook + instagram + pinterest) vit désormais dans site-web/buffer-graphql.js.
+// Ce fichier ne conserve QUE la résolution du board officiel Pinterest,
+// réutilisée par buffer-graphql.js (publierViaBufferGraphql).
 //
 // Mécanisme (réutilise la logique VALIDÉE des scripts de test du projet) :
 //  - Listing des boards : GraphQL `channel(input:)` → PinterestMetadata.boards
@@ -12,17 +17,15 @@
 //    /1/boards/{id}.json) répondent 400 « Unsupported Content-Type » avec la
 //    clé actuelle → voie GraphQL retenue (vérifié en direct le 07/09/2026).
 //  - Détection du board cible : slug d'URL ou nom normalisé (œ → oe).
-//  - Publication : mutation `createPost` + metadata.pinterest.boardServiceId
-//    + metadata.pinterest.url = lien de destination du site
-//    (test_buffer_publish.py v5 FINAL).
+//  - Publication (dans buffer-graphql.js) : mutation `createPost` +
+//    metadata.pinterest.boardServiceId + metadata.pinterest.url = lien de
+//    destination du site (test_buffer_publish.py v5 FINAL ; introspection
+//    live 2026-09-17 : PinterestPostMetadataInput { boardServiceId, title, url }).
 //
 // SESSION 13 (introspection GraphQL en direct, 07/09/2026) : transmission de
-// l'alt text ET de la transparence IA à Buffer.
-//  - altText : champ `ImageMetadataInput.altText` (« Alternative text for
-//    accessibility ») via `assets[].image.metadata.altText`. Supporté.
-//  - disclosure IA : champ `CreatePostInput.aiAssisted` (« If this post was
-//    created with the help of AI »). Supporté → on envoie `aiAssisted: true`.
-//  - Test brouillon : `CreatePostInput.saveToDraft` + `Mutation.deletePost(id)`.
+// l'alt text ET de la transparence IA à Buffer (gérée côté buffer-graphql.js) :
+//  - altText : champ `ImageMetadataInput.altText` via `assets[].image.metadata.altText`.
+//  - disclosure IA : champ `CreatePostInput.aiAssisted` → `aiAssisted: true`.
 // ═══════════════════════════════════════════════════════════════════════
 
 // BOARD CIBLE (exact) — constantes de référence
@@ -31,7 +34,7 @@ export const PINTEREST_BOARD_URL =
 export const PINTEREST_BOARD_SLUG = 'nos-meilleures-œuvres-art-mural-marocain';
 export const PINTEREST_BOARD_NAME = 'Nos meilleures œuvres — art mural marocain';
 
-const BUFFER_GRAPHQL_URL = 'https://api.buffer.com/graphql';
+const BUFFER_GRAPHQL_URL = (String(process.env.BUFFER_GRAPHQL_BASE || 'https://api.buffer.com').replace(/\/+$/, '')) + '/graphql';
 const BOARD_CACHE_TTL_MS = 10 * 60 * 1000; // mise en cache : 10 minutes
 
 let boardCache = null; // { board, resolvedAt }
@@ -114,92 +117,6 @@ export async function resolvePinterestBoard({ apiKey, channelId, env = process.e
   }
   boardCache = { board, resolvedAt: Date.now() };
   return board;
-}
-
-// Publication de l'épingle dans le board (mutation createPost, v5 FINAL)
-// SESSION 13 : transmet l'alt text (`image.metadata.altText`) et la disclosure
-// IA (`aiAssisted: true`) ; `saveToDraft` permet le test en brouillon.
-export async function publishPinToBuffer({
-  apiKey, channelId, board, title, description, link, imageUrl,
-  altText, aiAssisted = true, saveToDraft = false
-}) {
-  const input = {
-    channelId,
-    text: description || '',
-    mode: 'shareNow',
-    schedulingType: 'automatic',
-    needsApproval: false,
-    metadata: { pinterest: { boardServiceId: board.serviceId } }
-  };
-  // SESSION 13 : transparence IA obligatoire (schéma : « If this post was
-  // created with the help of AI »)
-  if (aiAssisted) input.aiAssisted = true;
-  if (saveToDraft) input.saveToDraft = true;
-  if (title) input.metadata.pinterest.title = title;
-  if (link) input.metadata.pinterest.url = link; // lien de destination du site (#gallery)
-  if (imageUrl) {
-    const image = { url: imageUrl };
-    // SESSION 13 : alt text via ImageMetadataInput.altText (« Alternative text
-    // for accessibility »), valeur = champ « Texte alternatif » du dashboard
-    if (altText) image.metadata = { altText };
-    input.assets = [{ image }];
-  }
-  const mutation = `
-    mutation CreatePost($input: CreatePostInput!) {
-      createPost(input: $input) {
-        ... on PostActionSuccess { post { id text status dueAt channel { id name service } } }
-        ... on InvalidInputError { message }
-        ... on UnauthorizedError { message }
-        ... on NotFoundError { message }
-        ... on LimitReachedError { message }
-        ... on UnexpectedError { message }
-        ... on RestProxyError { message }
-      }
-    }`;
-  const res = await fetch(BUFFER_GRAPHQL_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: mutation, variables: { input } })
-  });
-  if (!res.ok) throw new Error(`Buffer HTTP ${res.status} (createPost)`);
-  const json = await res.json();
-  if (json.errors && json.errors.length) {
-    throw new Error(`Buffer GraphQL : ${json.errors.map((e) => e.message).join(' ; ')}`);
-  }
-  const outcome = json && json.data && json.data.createPost;
-  if (!outcome) throw new Error('Buffer : réponse createPost vide');
-  if (outcome.message) throw new Error(`Buffer : ${outcome.message}`);
-  if (!outcome.post) throw new Error('Buffer : publication sans identifiant de post');
-  return { postId: outcome.post.id, status: outcome.post.status, dueAt: outcome.post.dueAt || null };
-}
-
-// Orchestrateur utilisé par server.js pour la plateforme « pinterest ».
-// body = corps de /api/social/publish (payload dashboard ou legacy).
-export async function handlePinterestPublish({ body, env = process.env } = {}) {
-  const apiKey = env.BUFFER_API_KEY;
-  const channelId = env.BUFFER_PINTEREST_CHANNEL_ID;
-  const copies = (body && body.copies) || {};
-  const pin = copies.pinterest || {};
-  const board = await resolvePinterestBoard({ apiKey, channelId, env });
-  const outcome = await publishPinToBuffer({
-    apiKey,
-    channelId,
-    board,
-    title: pin.title || '',
-    description: pin.description || pin.desc || (body && body.content) || '',
-    link: pin.link || '',
-    imageUrl: (body && body.mediaUrl) || '',
-    // SESSION 13 : alt text du dashboard (« Texte alternatif ») + disclosure IA
-    altText: (pin.alt || '').trim() || null,
-    aiAssisted: true
-  });
-  return {
-    board,
-    boardUrl: board.url || PINTEREST_BOARD_URL,
-    postId: outcome.postId,
-    status: outcome.status,
-    dueAt: outcome.dueAt
-  };
 }
 
 // Réinitialisation du cache (tests)
