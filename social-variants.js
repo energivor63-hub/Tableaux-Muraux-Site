@@ -363,6 +363,19 @@ export function genererVariantes(fiche) {
   return { instagram, facebook, pinterest };
 }
 
+/**
+ * SESSION 2026-09-18 (alt text) — légende pour le CHAMP ÉDITEUR Instagram.
+ * CTA « lien en bio » garanti DANS la légende de l'éditeur (aperçu = texte
+ * envoyé, plus d'écart composeur/mutation) : renvoie { texte, hashtags }.
+ */
+export function legendeEditeurInstagram(fiche) {
+  const pleine = genererVariantes(fiche).instagram;
+  const lignes = pleine.split('\n');
+  const hashtags = lignes.filter((l) => l.trim().startsWith('#')).join(' ');
+  const texte = lignes.filter((l) => !l.trim().startsWith('#')).join('\n').trim();
+  return { texte, hashtags };
+}
+
 /** Titre SEO Pinterest (≤ 100 caractères) : mot-clé + nom de l'œuvre. */
 export function titrePinterest(fiche) {
   const seoCat = SEO_PAR_CATEGORIE[fiche?.categorie] || SEO_PAR_CATEGORIE.autres;

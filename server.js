@@ -41,7 +41,8 @@ import { publierViaBufferGraphql } from './buffer-graphql.js';
 // de description Pinterest (voir social-variants.js).
 import {
   genererVariantes, titrePinterest, hashContenu,
-  assemblerLegendeInstagram, normaliserTexteReseau
+  assemblerLegendeInstagram, normaliserTexteReseau,
+  legendeEditeurInstagram
 } from './social-variants.js';
 // 💰 Synchro prix (ajout v2) — import ADDITIF : aucune fonction existante retouchée.
 import { spawnNode, masquerSecrets } from './control-tower-engine.js';
@@ -1810,11 +1811,21 @@ app.get('/api/social/variantes', (req, res) => {
     const critere = req.query.produit || req.query.produitId || null;
     const { fiche } = trouverFiche(critere);
     const variantes = genererVariantes(fiche || { nom: critere || 'Œuvre unique' });
+    // SESSION 2026-09-18 (alt text) : introspection LIVE api.buffer.com du
+    // 18/09/2026 (clé .env) → ImageMetadataInput.altText = NON_NULL String!
+    // via assets[].image.metadata → l'alt text des 3 réseaux EST transmis
+    // dans createPost (buffer-graphql.js: assets[0].image.metadata.altText ;
+    // Composio : alt_text). Le champ « Texte alternatif » du composeur n'est
+    // donc PAS une simple documentation locale.
     res.json({
       success: true,
       produit: critere,
       fiche: fiche ? { nom: fiche.nom, categorie: fiche.categorie, prix: fiche.prix, image: fiche.image } : null,
       variantes,
+      // Légende IG PRÊTE POUR L'ÉDITEUR : CTA « lien en bio » inclus dans le
+      // champ légende (plus d'écart aperçu/texte envoyé).
+      editeurInstagram: legendeEditeurInstagram(fiche || { nom: critere || 'Œuvre unique' }),
+      altTextSupporte: true,
       hashes: {
         instagram: hashContenu(variantes.instagram),
         facebook: hashContenu(variantes.facebook),
