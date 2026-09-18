@@ -42,7 +42,7 @@ const SITE_CONFIG = {
             label: "Instagram"
         },
         facebook: {
-            name: "Tableaux Muraux Marrakech",
+            name: "Ideawoven Marrakech",
             pageId: "952942547902065",
             url: "https://facebook.com/profile.php?id=952942547902065",
             label: "Facebook"

@@ -27,8 +27,8 @@ const socialData = {
     {
       id: "facebook",
       plateforme: "Facebook",
-      handle: "tableauxmuraux.maroc",
-      nom: "Tableaux Muraux Maroc - Tableaux d'Exception",
+      handle: "Ideawoven-Marrakech",
+      nom: "Ideawoven Marrakech",
       icone: "👥",
       statut: "connecte",
       abonnes: 8650,

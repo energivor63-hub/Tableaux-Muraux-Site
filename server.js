@@ -35,7 +35,14 @@ import {
 // SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
 import { publierViaBufferGraphql } from './buffer-graphql.js';
 // 🛡️ Phase B — variantes par réseau + hash anti-doublon (légendes distinctes IG/FB/PIN)
-import { genererVariantes, titrePinterest, hashContenu } from './social-variants.js';
+// 🎯 Session 2026-09-18 — qualité rédactionnelle : hashtags Instagram
+// dédoublonnés (Set ordonné, plafond 11) + CTA « lien en bio », adjectifs
+// qualifiants uniques par variante, locution du titre SEO non répétée en tête
+// de description Pinterest (voir social-variants.js).
+import {
+  genererVariantes, titrePinterest, hashContenu,
+  assemblerLegendeInstagram, normaliserTexteReseau
+} from './social-variants.js';
 // 💰 Synchro prix (ajout v2) — import ADDITIF : aucune fonction existante retouchée.
 import { spawnNode, masquerSecrets } from './control-tower-engine.js';
 import crypto from 'crypto';
@@ -1376,28 +1383,50 @@ app.get('/dashboard.html', (req, res) => {
 // « Nos meilleures œuvres — art mural marocain » (voir site-web/buffer-pinterest.js).
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Texte du dashboard pour un réseau ('' si l'utilisateur n'a rien saisi). */
-function texteDashboardPour(copies, reseau) {
+/**
+ * Texte du dashboard pour un réseau ('' si l'utilisateur n'a rien saisi).
+ * SESSION 2026-09-18 : le texte saisi passe par les règles rédactionnelles
+ * (social-variants.js) AVANT envoi :
+ *   • Instagram : un SEUL bloc de hashtags dédoublonnés (plafond 11) précédé du
+ *     CTA « lien en bio » — corrige le doublon réel du 17/09 (caption qui
+ *     contenait déjà les hashtags + champ hashtags) ;
+ *   • Facebook : adjectifs qualifiants uniques (CTA WhatsApp + lien conservés) ;
+ *   • Pinterest : adjectifs uniques + locution du titre SEO non répétée en tête
+ *     de description (le titre et les « Mots-clés » restent intacts).
+ */
+function texteDashboardPour(copies, reseau, fiche) {
   const c = (copies && copies[reseau]) || {};
   if (reseau === 'instagram') {
-    return [c.caption, c.hashtags].filter((v) => v && String(v).trim()).join('\n\n').trim();
+    const caption = String(c.caption || '').trim();
+    const hashtags = String(c.hashtags || '').trim();
+    if (!caption && !hashtags) return '';
+    return assemblerLegendeInstagram(caption, hashtags);
   }
-  if (reseau === 'facebook') return String(c.text || '').trim();
-  return [c.title, c.description].filter((v) => v && String(v).trim()).join('\n').trim();
+  if (reseau === 'facebook') {
+    const texte = String(c.text || '').trim();
+    return texte ? normaliserTexteReseau(texte, { reseau: 'facebook', fiche }) : '';
+  }
+  const titre = String(c.title || '').trim();
+  const description = String(c.description || '').trim();
+  const texte = [titre, description].filter(Boolean).join('\n').trim();
+  return texte ? normaliserTexteReseau(texte, { reseau: 'pinterest', titre }) : '';
 }
 
 /**
  * 3 légendes GARANTIES DISTINCTES pour les réseaux demandés.
- * Le texte saisi dans le dashboard prime ; sinon la variante générée depuis la
- * fiche (social-variants.js). Deux réseaux ne peuvent JAMAIS partir avec un
- * texte strictement identique (anti-doublon Buffer).
+ * Le texte saisi dans le dashboard prime (normalisé par les règles
+ * rédactionnelles du 18/09/2026 : hashtags IG dédoublonnés + CTA « lien en
+ * bio », adjectifs qualifiants uniques, locution du titre SEO non répétée) ;
+ * sinon la variante générée depuis la fiche (social-variants.js). Deux réseaux
+ * ne peuvent JAMAIS partir avec un texte strictement identique (anti-doublon
+ * Buffer).
  */
 function resoudreTextesParReseau(plateformes, copies, fiche) {
   const variantes = genererVariantes(fiche || {});
   const textes = {};
   const origine = {};
   plateformes.forEach((p) => {
-    const saisi = texteDashboardPour(copies, p);
+    const saisi = texteDashboardPour(copies, p, fiche);
     textes[p] = saisi || variantes[p] || '';
     origine[p] = saisi ? 'dashboard' : 'variante-auto';
   });
