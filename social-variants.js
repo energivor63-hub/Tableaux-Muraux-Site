@@ -371,42 +371,65 @@ export function genererVariantes(fiche) {
   const matiere = fiche?.materiauRecommande || 'bâche premium';
   const prix = fiche?.prix || 'Prix sur demande';
 
-  // ── Instagram : accroche courte + CTA « lien en bio » + 5 hashtags ──
-  // Le CTA précède TOUJOURS le bloc de hashtags (aucun lien cliquable en
-  // légende Instagram) ; règle (a) appliquée sur tout le texte.
-  const instagram = limiterAdjectifsQualifiants([
-    `✨ ${nom} — fait main à Marrakech.`,
+  // ── Instagram : accroche courte + corps plafonné + CTA « lien en bio » + 5 hashtags ──
+  // GABARIT (20/09/2026) : la légende (hors hashtags) respecte le max du
+  // compteur (200). Le CTA précède TOUJOURS le bloc de hashtags (aucun lien
+  // cliquable en légende Instagram) ; le prix vit dans son champ dédié, pas
+  // dans la légende ; règle (a) appliquée sur tout le texte.
+  const accrocheIg = `✨ ${nom} — fait main à Marrakech.`;
+  const corpsIgComplet = `${sansPointFinal(fiche?.ambiance || 'Pièce unique')}, en ${matiere.toLowerCase()}. ${String(fiche?.description || '').replace(/\s+/g, ' ').trim()}`.trim();
+  const budgetIg = MAX_LEGENDE_INSTAGRAM - accrocheIg.length - CTA_LIEN_BIO.length - 4; // 2× \n\n
+  const corpsIg = premierePhrase(corpsIgComplet, Math.max(25, budgetIg));
+  const instagramBrut = limiterAdjectifsQualifiants([
+    accrocheIg,
     '',
-    `${sansPointFinal(fiche?.ambiance || 'Pièce unique')}, en ${matiere.toLowerCase()}. ${premierePhrase(fiche?.description, 110)}`.trim(),
-    '',
-    `${prix}`,
+    corpsIg,
     '',
     CTA_LIEN_BIO,
     '',
     hashtagsInstagram(fiche).join(' ')
   ].join('\n'));
+  // Garantie finale (les replis de la règle (a) allongent : « dorée » → « au
+  // fini lumineux ») : légende ≤ 200, CTA conservé ; hashtags intacts.
+  const hashIg = instagramBrut.split('\n').filter((l) => MOTIF_LIGNE_HASHTAGS.test(l)).join(' ');
+  const captionBrute = instagramBrut.split('\n').filter((l) => !MOTIF_LIGNE_HASHTAGS.test(l)).join('\n').trim();
+  const instagram = plafonnerLegendeInstagram(captionBrute).texte + '\n\n' + hashIg;
 
   // ── Facebook : phrase longue + CTA WhatsApp + lien du site (règle (a)) ──
-  const facebook = limiterAdjectifsQualifiants([
-    `« ${nom} » — ${sansPointFinal(String(fiche?.ambiance || 'une ambiance unique').toLowerCase())}.`,
-    '',
-    String(fiche?.description || '').replace(/\s+/g, ' ').trim(),
-    '',
-    `${matiere} · ${fiche?.montageRecommande || 'montage au choix'} · ${prix}. Pièce unique, fabriquée à la main dans notre atelier de Marrakech.`,
-    '',
+  // GABARIT (20/09/2026) : le texte respecte le max du compteur (400) — la
+  // description est budgétée, les lignes CTA sont intouchables et en fin.
+  const fbTitre = `« ${nom} » — ${sansPointFinal(String(fiche?.ambiance || 'une ambiance unique').toLowerCase())}.`;
+  const fbMatiere = `${matiere} · ${fiche?.montageRecommande || 'montage au choix'} · ${prix}. Pièce unique, fabriquée à la main dans notre atelier de Marrakech.`;
+  const fbCtas = [
     `📞 Contactez-nous : ${WHATSAPP_AFFICHE} (${WHATSAPP_LIEN})`,
     `🌐 Collection complète : ${SITE_PUBLIC}`
+  ];
+  const budgetFb = MAX_TEXTE_FACEBOOK - fbTitre.length - fbMatiere.length - fbCtas.join('\n').length - 8; // 4× \n\n
+  const fbDesc = premierePhrase(String(fiche?.description || '').replace(/\s+/g, ' ').trim(), Math.max(40, budgetFb));
+  const facebookBrut = limiterAdjectifsQualifiants([
+    fbTitre,
+    '',
+    fbDesc,
+    '',
+    fbMatiere,
+    '',
+    ...fbCtas
   ].join('\n'));
+  // Garantie finale (replis (a) allongeants) : texte ≤ 400, CTA conservés en fin.
+  const facebook = plafonnerTexteFacebook(facebookBrut).texte;
 
   // ── Pinterest : titre SEO + description reformulée + mots-clés ──
   // Règles (a) + (b) : la locution du titre SEO n'est jamais répétée mot pour
   // mot en tête de description (« cette création » à la place) et l'adjectif
   // qualifiant reste unique (le bloc « Mots-clés : … » reste intact).
+  // GABARIT (20/09/2026) : SANS ligne WhatsApp (le lien part via le champ
+  // link) + plafond dur desc ≤ 500 − len(titre) − 1 (mots-clés sacrifiés en
+  // premier si dépassement — jamais observé sur le catalogue, max 475).
   const motsCles = ['tableau mural marocain', seoCat, `décoration ${envLabel}`,
     ...(Array.isArray(fiche?.couleurs) ? fiche.couleurs.slice(0, 3).map((c) => String(c).toLowerCase()) : []),
     'fait main Marrakech'].join(', ');
   const pinterestTitre = `${titrePinterest(fiche)}.`;
-  const pinterest = normaliserTexteReseau([
+  const pinterestBrut = normaliserTexteReseau([
     pinterestTitre,
     '',
     `Cette création a été pensée pour votre ${envLabel}. ${premierePhrase(fiche?.description, 180)}`,
@@ -414,6 +437,18 @@ export function genererVariantes(fiche) {
     '',
     `Mots-clés : ${motsCles}`
   ].join('\n'), { reseau: 'pinterest', titre: pinterestTitre });
+  let pinterest = pinterestBrut;
+  {
+    const coupe = pinterest.indexOf('\n');
+    const t = coupe === -1 ? pinterest : pinterest.slice(0, coupe);
+    let d = coupe === -1 ? '' : pinterest.slice(coupe + 1);
+    if (t.length + 1 + d.length > MAX_TOTAL_PINTEREST) {
+      d = d.split('\n').filter((l) => !MOTIF_LIGNE_MOTS_CLES.test(l)).join('\n');
+      const budget = MAX_TOTAL_PINTEREST - t.length - 1;
+      if (d.length > budget) d = coupePropre(d, budget);
+      pinterest = t + '\n' + d;
+    }
+  }
 
   return { instagram, facebook, pinterest };
 }
@@ -441,4 +476,102 @@ export function titrePinterest(fiche) {
 /** Hash court du contenu (garde-fou anti-doublon local). */
 export function hashContenu(texte) {
   return crypto.createHash('sha256').update(String(texte || ''), 'utf8').digest('hex').slice(0, 16);
+}
+
+// ── GABARITS CONFORMES + BOUTON « ✂️ » (20/09/2026, source de vérité unique) ──
+// Les compteurs du dashboard sont des maxes par CHAMP (légende IG 200, texte
+// FB 400, titre PIN 100, total PIN titre+description 500, alt 500, hashtags
+// dédup ≤ 11 — la plateforme IG autorise 30, notre plafond dur reste 11).
+// Ces fonctions pures servent à la FOIS la génération (gabarits conformes
+// d'emblée), la route POST /api/social/appliquer-limites (boutons ✂️) et les
+// suites de test. Zones protégées, JAMAIS amputées : nom d'œuvre entre
+// « … », ligne CTA « lien en bio » (IG, conservée en fin), lignes CTA
+// WhatsApp + lien site (FB, conservées en fin) ; ligne « Mots-clés : »
+// (Pinterest) sacrifiée en premier (fin de description).
+export const MAX_LEGENDE_INSTAGRAM = 200;
+export const MAX_TEXTE_FACEBOOK = 400;
+export const MAX_TITRE_PINTEREST = 100;
+export const MAX_TOTAL_PINTEREST = 500;
+export const MAX_ALT = 500;
+
+/**
+ * Coupe propre au mot entier : au dernier espace avant `max` (place réservée
+ * au « … » final), JAMAIS dans un nom d'œuvre entre « … » (recul avant le
+ * « ouvrant si la coupe tomberait dedans), jamais mi-mot.
+ */
+export function coupePropre(texte, max) {
+  const t = String(texte || '');
+  if (t.length <= max) return t;
+  if (max <= 1) return '…'.slice(0, Math.max(0, max));
+  let coupe = t.slice(0, max - 1).replace(/\s+$/, '');
+  let espace = coupe.lastIndexOf(' ');
+  while (espace > 0
+    && (coupe.slice(0, espace).split('«').length - 1) > (coupe.slice(0, espace).split('»').length - 1)) {
+    espace = coupe.lastIndexOf(' ', espace - 1);
+  }
+  if (espace > 0) coupe = coupe.slice(0, espace);
+  return coupe + '…';
+}
+
+/** Ligne CTA Instagram (« lien en bio ») : conservée intégralement, en fin. */
+const estLigneCtaInstagram = (ligne) => /lien en bio/i.test(ligne || '');
+
+/** Lignes CTA Facebook : WhatsApp + lien site, conservées intégralement, en fin. */
+const estLigneCtaFacebook = (ligne) =>
+  /contactez-nous|wa\.me/i.test(ligne || '') || /collection complète|github\.io/i.test(ligne || '');
+
+/**
+ * Légende Instagram ≤ 200 : le corps est plafonné, la ligne CTA « lien en
+ * bio » est conservée intégralement EN FIN (recollée après coupe).
+ */
+export function plafonnerLegendeInstagram(legende, max = MAX_LEGENDE_INSTAGRAM) {
+  const source = String(legende || '');
+  if (source.length <= max) return { texte: source, corrige: false };
+  const lignes = source.split(/\r?\n/);
+  const idxCta = lignes.findIndex(estLigneCtaInstagram);
+  const cta = idxCta === -1 ? [] : lignes.splice(idxCta, 1);
+  let corps = lignes.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const reserve = cta.length ? cta.join('\n').length + 2 : 0; // + \n\n avant CTA
+  const budget = max - reserve;
+  if (corps.length > budget) corps = coupePropre(corps, Math.max(0, budget));
+  const texte = [corps, ...cta].filter(Boolean).join('\n\n');
+  return { texte, corrige: true };
+}
+
+/**
+ * Texte Facebook ≤ 400 : le corps est plafonné, les lignes CTA WhatsApp +
+ * lien site sont conservées intégralement EN FIN (recollées après coupe).
+ */
+export function plafonnerTexteFacebook(texte, max = MAX_TEXTE_FACEBOOK) {
+  const source = String(texte || '');
+  if (source.length <= max) return { texte: source, corrige: false };
+  const lignes = source.split(/\r?\n/);
+  const ctas = lignes.filter(estLigneCtaFacebook);
+  let corps = lignes.filter((l) => !estLigneCtaFacebook(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const reserve = ctas.length ? ctas.join('\n').length + 2 : 0; // + \n\n avant CTA
+  const budget = max - reserve;
+  if (corps.length > budget) corps = coupePropre(corps, Math.max(0, budget));
+  const final = [corps, ...ctas].filter(Boolean).join('\n\n');
+  return { texte: final, corrige: true };
+}
+
+/** Titre Pinterest ≤ 100 (coupe mot-entier, nom d'œuvre protégé). */
+export function plafonnerTitrePinterest(titre, max = MAX_TITRE_PINTEREST) {
+  const t = String(titre || '').trim();
+  if (t.length <= max) return { texte: t, corrige: false };
+  return { texte: coupePropre(t, max), corrige: true };
+}
+
+/** Texte alternatif ≤ 500 (coupe mot-entier). */
+export function plafonnerAlt(alt, max = MAX_ALT) {
+  const t = String(alt || '');
+  if (t.length <= max) return { texte: t, corrige: false };
+  return { texte: coupePropre(t, max), corrige: true };
+}
+
+/** Hashtags dédoublonnés, plafond dur 11 (plateforme IG : 30 — notre gabarit reste 11). */
+export function plafonnerHashtags(hashtags, plafond = MAX_HASHTAGS) {
+  const texte = dedupliquerHashtags(extraireHashtags(hashtags), plafond).join(' ');
+  const norme = String(hashtags || '').split(/\s+/).filter(Boolean).join(' ');
+  return { texte, corrige: texte !== norme };
 }

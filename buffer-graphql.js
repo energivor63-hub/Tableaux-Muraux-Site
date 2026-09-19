@@ -70,6 +70,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { resolvePinterestBoard } from './buffer-pinterest.js';
+import { coupePropre, plafonnerTitrePinterest } from './social-variants.js';
 
 const BUFFER_GRAPHQL_BASE = String(process.env.BUFFER_GRAPHQL_BASE || 'https://api.buffer.com').replace(/\/+$/, '');
 const BUFFER_GRAPHQL_URL = BUFFER_GRAPHQL_BASE + '/graphql';
@@ -365,12 +366,10 @@ export function appliquerLimitePinterest500(texte) {
   if (total() <= PINTEREST_LIMITE_TOTALE) {
     return { texte: titre + '\n' + description, titre, description, tronque: true, totalAvant, totalApres: total() };
   }
-  // (b) Tronquature propre : titre intact, coupe au dernier espace + « … ».
+  // (b) Tronquature propre : titre intact, coupe mot-entier + « … »
+  // (coupePropre : jamais mi-mot, jamais dans un nom entre « … »).
   const budget = PINTEREST_LIMITE_TOTALE - titre.length - 1;
-  let moignon = budget > 1 ? description.slice(0, budget - 1) : '';
-  const espace = moignon.lastIndexOf(' ');
-  if (espace > 0) moignon = moignon.slice(0, espace);
-  description = moignon + '…';
+  if (description.length > budget) description = coupePropre(description, Math.max(0, budget));
   return { texte: titre + '\n' + description, titre, description, tronque: true, totalAvant, totalApres: total() };
 }
 
@@ -392,6 +391,12 @@ export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, ti
   let limitePin = null;
   if (reseau === 'pinterest') {
     board = await resolvePinterestBoard({ apiKey: String(env.BUFFER_API_KEY || ''), channelId: canalId, env });
+    // Titre ≤ 100 d'abord (compteur du champ), puis total titre+description ≤ 500.
+    const coupeTitre = String(texte || '').indexOf('\n');
+    if (coupeTitre !== -1) {
+      const titrePlafonne = plafonnerTitrePinterest(String(texte).slice(0, coupeTitre));
+      if (titrePlafonne.corrige) texte = titrePlafonne.texte + String(texte).slice(coupeTitre);
+    }
     limitePin = appliquerLimitePinterest500(texte);
     texte = limitePin.texte;
   }

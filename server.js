@@ -33,7 +33,7 @@ import {
   commitAndPushSite
 } from './control-tower-engine.js';
 // SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
-import { publierViaBufferGraphql } from './buffer-graphql.js';
+import { publierViaBufferGraphql, appliquerLimitePinterest500 } from './buffer-graphql.js';
 // 🛡️ Phase B — variantes par réseau + hash anti-doublon (légendes distinctes IG/FB/PIN)
 // 🎯 Session 2026-09-18 — qualité rédactionnelle : hashtags Instagram
 // dédoublonnés (Set ordonné, plafond 11) + CTA « lien en bio », adjectifs
@@ -42,7 +42,9 @@ import { publierViaBufferGraphql } from './buffer-graphql.js';
 import {
   genererVariantes, titrePinterest, hashContenu,
   assemblerLegendeInstagram, normaliserTexteReseau,
-  legendeEditeurInstagram
+  legendeEditeurInstagram,
+  plafonnerLegendeInstagram, plafonnerTexteFacebook,
+  plafonnerTitrePinterest, plafonnerAlt, plafonnerHashtags
 } from './social-variants.js';
 // 💰 Synchro prix (ajout v2) — import ADDITIF : aucune fonction existante retouchée.
 import { spawnNode, masquerSecrets } from './control-tower-engine.js';
@@ -1159,6 +1161,69 @@ async function executerPublication(body, ciblesForcees) {
       produit, produitNom, mediaUrl
     };
 }
+
+// POST /api/social/appliquer-limites — bouton « ✂️ Appliquer la limite » PAR CHAMP
+// (dashboard, 20/09/2026). SOURCE DE VÉRITÉ UNIQUE : les MÊMES fonctions pures
+// que le garde-fou d'envoi (social-variants.js + buffer-graphql.js).
+// Entrée : { reseau: 'pinterest'|'instagram'|'facebook', champs: {...} }.
+//   pinterest : titre ≤ 100 PUIS total titre+1+description ≤ 500 (ligne WhatsApp
+//               retirée d'abord, mots-clés sacrifiés en premier, coupe mot-entier) ;
+//   instagram : légende ≤ 200 (CTA « lien en bio » conservé en fin,
+//               nom d'œuvre entre « … » jamais amputé), hashtags dédup ≤ 11, alt ≤ 500 ;
+//   facebook  : texte ≤ 400 (CTA WhatsApp + lien site conservés en fin), alt ≤ 500.
+// Sortie : { success, reseau, champs: {...corrigés}, corriges: [champs modifiés] }.
+app.post('/api/social/appliquer-limites', (req, res) => {
+  try {
+    const { reseau, champs } = req.body || {};
+    const c = (champs && typeof champs === 'object') ? champs : {};
+    const corriges = [];
+    if (reseau === 'pinterest') {
+      const rTitre = plafonnerTitrePinterest(c.titre ?? '');
+      if (rTitre.corrige) corriges.push('titre');
+      const garde = appliquerLimitePinterest500(rTitre.texte + '\n' + String(c.description ?? ''));
+      if (garde.tronque) corriges.push('description');
+      const champsPin = { titre: garde.titre, description: garde.description };
+      if (c.alt !== undefined) {
+        const rAlt = plafonnerAlt(c.alt);
+        champsPin.alt = rAlt.texte;
+        if (rAlt.corrige) corriges.push('alt');
+      }
+      return res.json({
+        success: true, reseau, corriges, totalApres: garde.totalApres, champs: champsPin
+      });
+    }
+    if (reseau === 'instagram') {
+      const out = {};
+      const rLeg = plafonnerLegendeInstagram(c.legende ?? '');
+      out.legende = rLeg.texte;
+      if (rLeg.corrige) corriges.push('legende');
+      const rTag = plafonnerHashtags(c.hashtags ?? '');
+      out.hashtags = rTag.texte;
+      if (rTag.corrige) corriges.push('hashtags');
+      if (c.alt !== undefined) {
+        const rAlt = plafonnerAlt(c.alt);
+        out.alt = rAlt.texte;
+        if (rAlt.corrige) corriges.push('alt');
+      }
+      return res.json({ success: true, reseau, champs: out, corriges });
+    }
+    if (reseau === 'facebook') {
+      const out = {};
+      const rTxt = plafonnerTexteFacebook(c.texte ?? '');
+      out.texte = rTxt.texte;
+      if (rTxt.corrige) corriges.push('texte');
+      if (c.alt !== undefined) {
+        const rAlt = plafonnerAlt(c.alt);
+        out.alt = rAlt.texte;
+        if (rAlt.corrige) corriges.push('alt');
+      }
+      return res.json({ success: true, reseau, champs: out, corriges });
+    }
+    return res.json({ success: false, error: `Réseau non pris en charge : ${reseau || '(absent)'}` });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
 
 // POST /api/social/publish — publication multi-réseaux DURCIE (Phase B)
 app.post('/api/social/publish', async (req, res) => {
