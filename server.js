@@ -1175,7 +1175,12 @@ async function executerPublication(body, ciblesForcees) {
 app.post('/api/social/appliquer-limites', (req, res) => {
   try {
     const { reseau, champs } = req.body || {};
-    const c = (champs && typeof champs === 'object') ? champs : {};
+    const brut = (champs && typeof champs === 'object') ? champs : {};
+    // Anti-vidage (20/09/2026) : alias de clés toléré (`desc` → `description`,
+    // formes historiques du dashboard) — une clé absente/mal nommée ne produit
+    // plus jamais de valeur undefined côté écriture (garde dashboard exigée).
+    const c = { ...brut };
+    if (c.description === undefined && c.desc !== undefined) c.description = c.desc;
     const corriges = [];
     if (reseau === 'pinterest') {
       const rTitre = plafonnerTitrePinterest(c.titre ?? '');

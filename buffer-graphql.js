@@ -358,10 +358,18 @@ export function appliquerLimitePinterest500(texte) {
   if (totalAvant <= PINTEREST_LIMITE_TOTALE) {
     return { texte: brut, titre, description, tronque: false, totalAvant, totalApres: totalAvant };
   }
-  // (a) La ligne WhatsApp saute : le lien de destination voyage dans
-  // metadata.pinterest.url, pas dans le texte (économie ~45 caractères).
+  // (a) La référence WhatsApp saute (le lien de destination voyage dans
+  // metadata.pinterest.url, pas dans le texte) — JAMAIS la description entière :
+  // cause racine du vidage 20/09 : le filtre supprimait la LIGNE entière dès
+  // qu'elle contenait « Commande directe : …wa.me… », ce qui VIDAIT les
+  // descriptions MONOLIGNES natives (tout le texte + wa.me sur une seule
+  // ligne → 0/500, total = titre seul). On excise le seul SEGMENT WhatsApp.
+  const MOTIF_SEGMENT_WA = /commande directe\s*:?\s*https?:\/\/wa\.me\/\S*/i;
   description = description.split(/\r?\n/)
-    .filter((ligne) => !/commande directe\s*:.*wa\.me/i.test(ligne))
+    .map((ligne) => (/commande directe\s*:.*wa\.me/i.test(ligne)
+      ? ligne.replace(MOTIF_SEGMENT_WA, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,;:!?])/g, '$1').trim()
+      : ligne))
+    .filter((ligne) => ligne.trim() !== '')
     .join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
   if (total() <= PINTEREST_LIMITE_TOTALE) {
     return { texte: titre + '\n' + description, titre, description, tronque: true, totalAvant, totalApres: total() };
