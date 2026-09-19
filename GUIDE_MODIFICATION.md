@@ -272,23 +272,17 @@ Format : sans le `+`, sans espaces (ex: `212648620364`)
 
 Après chaque modification, vous devez **redéployer** le site :
 
-### Netlify (Méthode officielle)
+### GitHub Pages (Méthode officielle — déploiement unique)
 
-1. Allez sur **https://app.netlify.com**
-2. Sélectionnez votre site **`ideawoven-marrakech`**
-3. Onglet **"Deploys"**
-4. **Glissez-déposez le dossier `site-web`** (tout le dossier)
-5. Attendez 30 secondes
-6. Votre site est mis à jour !
+La migration est terminée : le site est servi UNIQUEMENT par GitHub Pages
+(`https://energivor63-hub.github.io/Tableaux-Muraux-Site`, dépôt `site-web`).
 
-⚠️ **Important** : vous devez glisser le dossier **ENTIER**, pas juste `index.html`
+1. Depuis le dossier **`site-web`** (seul dépôt poussé) :
+   `git add -A && git commit -m "MAJ site" && git push`
+2. Attendez ~1 minute : GitHub Pages redéploie automatiquement
+3. Vérifiez l'URL canonique ci-dessus (videz le cache : `Ctrl + F5`)
 
-### Netlify Drop (Sans compte)
-
-Pour un déploiement rapide de test :
-1. Allez sur **https://app.netlify.com/drop**
-2. Glissez le dossier `site-web`
-3. URL temporaire générée
+⚠️ **Important** : poussez depuis **`site-web`** uniquement (jamais de push à la racine, dépôt racine local-only depuis le 18/09/2026)
 
 ---
 

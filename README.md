@@ -194,13 +194,12 @@ git push -u origin main
 
 **URL** : `https://VOTRE_USER.github.io/VOTRE_REPO`
 
-### Option 2 : Netlify (Gratuit)
+### Option 2 : GitHub Pages — dépôt existant (migration terminée)
 
-1. Aller sur [netlify.com](https://www.netlify.com)
-2. Glisser-déposer le dossier `site-web/`
-3. Votre site est en ligne !
-
-**URL** : `https://NOM_ALÉATOIRE.netlify.app`
+Le site est servi UNIQUEMENT par GitHub Pages
+(`https://energivor63-hub.github.io/Tableaux-Muraux-Site`) : poussez depuis
+`site-web` (`git add -A && git commit -m "MAJ site" && git push`) et le
+redéploiement est automatique (~1 minute).
 
 ### Option 3 : Vercel (Gratuit)
 

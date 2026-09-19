@@ -23,6 +23,14 @@
 //       cliquable dans une légende). Les lignes « Mots-clés : … » (SEO) et le
 //       titre SEO Pinterest restent intacts.
 //
+// SESSION « ANTI-CORRUPTION » (2026-09-19) — constats des posts réels du 19/09 :
+//   (a) remplacements UNIQUEMENT en mots complets (bornes tolérantes aux
+//       accents + `_` : jamais de radical remplacé DANS un mot) ;
+//   (b) garantirTeteDescription() : la description Pinterest ne commence
+//       JAMAIS par la locution du titre (ni une forme corrompue) ;
+//   URL canonique UNIQUE : https://energivor63-hub.github.io/Tableaux-Muraux-Site
+//       (WEBSITE_URL, fallback, CTA IG affiché sans protocole).
+//
 // Utilisé par :
 //   - site-web/server.js : GET /api/social/variantes (aperçu) et
 //     POST /api/social/publish (repli automatique si une copie manque ou
@@ -115,8 +123,15 @@ const FORMES_SURVEILLEES = [
   ...EXPRESSIONS_REPLI.flatMap((expression) => expression.formes),
   ...FAMILLES_ADJECTIFS.flatMap((famille) => famille.formes)
 ].sort((a, b) => b.length - a.length);
+/**
+ * Règle (a) — remplacements UNIQUEMENT en mots complets (19/09/2026).
+ * Bornes de mot tolérantes aux accents : la forme doit être précédée ET
+ * suivie d'un non-mot (lettre accentuée, chiffre et `_` inclus) — JAMAIS de
+ * remplacement d'un radical DANS un mot (« dorée » → « au fini lumineux »
+ * ne touche ni « adorée » ni « ordonnée » ni « coordonnée »).
+ */
 const MOTIF_ADJECTIFS = new RegExp(
-  '(?<![\\p{L}\\p{N}])(?:' + FORMES_SURVEILLEES.map(echapperRegex).join('|') + ')(?![\\p{L}\\p{N}])',
+  '(?<![\\p{L}\\p{N}_])(?:' + FORMES_SURVEILLEES.map(echapperRegex).join('|') + ')(?![\\p{L}\\p{N}_])',
   'giu'
 );
 
@@ -253,6 +268,36 @@ export function eviterRediteTitre(corps, titre) {
 }
 
 /**
+ * Règle (b) — GARANTIE FINALE (19/09/2026) : la description ne commence
+ * JAMAIS par la locution du titre (ni une forme corrompue). Si la tête de
+ * la description correspond encore à la locution après eviterRediteTitre
+ * (cas limites : locution courte, ponctuation intercalée), cette tête est
+ * remplacée par « Cette création » + la suite. Seules les deux chaînes
+ * littérales « Cette création » / « cette création » sont produites :
+ * « Cette création » ne peut jamais devenir « Ce création ».
+ */
+export function garantirTeteDescription(corps, titre) {
+  const texte = String(corps || '');
+  if (!texte) return texte;
+  const mots = jetons(locutionDuTitre(titre));
+  if (!mots.length) return texte;
+  // Garde anti-faux-positifs : pas de locution distinctive (« de la »,
+  // « en or »), mot unique trop court (jamais de décapitation large).
+  if (!mots.some((w) => w.length >= 4)) return texte;
+  if (mots.length === 1 && mots[0].length < 5) return texte;
+  const re = /[\p{L}\p{N}]+/gu;
+  const positions = [];
+  let m;
+  while ((m = re.exec(texte)) !== null && positions.length < mots.length) {
+    positions.push({ mot: sansAccents(m[0]), start: m.index, end: m.index + m[0].length });
+  }
+  if (positions.length < mots.length) return texte;
+  if (positions.map((p) => p.mot).join(' ') !== mots.join(' ')) return texte;
+  if (positions[0].start !== 0) return texte; // pas en tête → rien à garantir
+  return 'Cette création' + texte.slice(positions[positions.length - 1].end);
+}
+
+/**
  * Normalise un texte de réseau : règle (b) d'abord sur Pinterest (la locution
  * du titre SEO disparaît de la tête de description AVANT le comptage des
  * adjectifs, sinon « calligraphie dorée » → « calligraphie au fini lumineux »
@@ -269,7 +314,7 @@ export function normaliserTexteReseau(texte, options = {}) {
       const corps = resultat.slice(coupe + 1);
       const memeTitre = sansAccents(entete).replace(/\s+/g, ' ').trim()
         === sansAccents(titre).replace(/\s+/g, ' ').trim();
-      if (memeTitre) resultat = `${entete}\n${eviterRediteTitre(corps, titre)}`;
+      if (memeTitre) resultat = `${entete}\n${garantirTeteDescription(eviterRediteTitre(corps, titre), titre)}`;
     }
   }
   return limiterAdjectifsQualifiants(resultat);

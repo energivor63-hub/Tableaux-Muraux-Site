@@ -25,7 +25,7 @@ Placez ici les photos de vos tableaux muraux pour les afficher sur votre site.
   2. Renommez-la : produit-1.jpg (ou 2, 3, 4, 5, 6)
   3. Placez-la dans ce dossier "images/"
   4. Écrasez l'ancien fichier si demandé
-  5. Redéployez sur Netlify Drop (voir GUIDE_MODIFICATION.md)
+  5. Redéployez via GitHub Pages : poussez depuis site-web (voir GUIDE_MODIFICATION.md)
 
 🎥 POUR LES VIDÉOS (optionnel) :
   Vous pouvez ajouter : video-atelier.mp4 (vidéo de votre atelier)
@@ -36,5 +36,6 @@ Placez ici les photos de vos tableaux muraux pour les afficher sur votre site.
   Exemple : "image": "images/mon-beau-tableau.jpg"
 
 🔒 IMPORTANT :
-  Les images placées ici ne sont visibles QUE lorsque le site est déployé sur Netlify.
+  Les images placées ici ne sont visibles en ligne QUE lorsque le site est
+  déployé sur GitHub Pages (poussez depuis site-web).
   Localement, elles s'affichent si vous ouvrez index.html directement.
