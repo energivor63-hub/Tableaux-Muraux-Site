@@ -40,13 +40,23 @@ const WHATSAPP_NUMERO = String(process.env.WHATSAPP_NUMBER || '212648620364');
 const WHATSAPP_AFFICHE = '+212 ' + WHATSAPP_NUMERO.replace(/^212/, '').replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3');
 const WHATSAPP_LIEN = 'https://wa.me/' + WHATSAPP_NUMERO;
 const SITE_PUBLIC = 'https://energivor63-hub.github.io/Tableaux-Muraux-Site/#gallery';
+// Site public de référence (SESSION 2026-09-18 — URL visible dans la légende IG) :
+// lu depuis .env (WEBSITE_URL), fallback dur GitHub Pages. Sans protocole pour
+// être copiable directement dans une légende Instagram (aucun lien cliquable).
+const SITE_URL_BRUT = String(process.env.WEBSITE_URL
+  || 'https://energivor63-hub.github.io/Tableaux-Muraux-Site').trim().replace(/\/+$/, '');
+const URL_VISIBLE = SITE_URL_BRUT.replace(/^https?:\/\//i, '');
 
 // ── Règles rédactionnelles (correctifs du 18/09/2026) ────────────────────
 /**
  * Instagram ne rend AUCUN lien cliquable dans une légende : le seul chemin
  * vers le catalogue est la ligne « lien en bio », insérée AVANT les hashtags.
+ * SESSION 2026-09-18 (URL visible) : Instagram n'offrant aucun lien cliquable
+ * en légende, la ligne CTA fusionne le CTA ET l'URL du site EN CLAIR (copiable)
+ * — UNE seule ligne, utilisée à la fois pour l'ÉDITEUR (legendeEditeurInstagram)
+ * et pour l'ENVOI (assemblerLegendeInstagram / genererVariantes).
  */
-const CTA_LIEN_BIO = '👉 Catalogue complet & commandes : lien en bio 🔗';
+const CTA_LIEN_BIO = '👉 Catalogue complet & commandes : lien en bio 🔗 · 🌐 ' + URL_VISIBLE;
 /** Plafond dur du nombre de hashtags dans une légende Instagram. */
 const MAX_HASHTAGS = 11;
 const MOTIF_HASHTAG = /#[\p{L}\p{N}_]+/gu;
