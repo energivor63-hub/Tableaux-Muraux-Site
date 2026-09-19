@@ -300,7 +300,7 @@ Ajouter Google Analytics avant `</head>` :
 1. Ouvrir `contenu.js`
 2. Modifier le bloc du produit dans la section `produits`
 3. Sauvegarder
-4. Committer et pousser : `git add -A && git commit -m "MAJ produit" && git push`
+4. Committer et pousser **depuis `site-web` uniquement** (seul dépôt poussé — jamais de push à la racine, dépôt racine local-only depuis le 18/09/2026) : `git add -A && git commit -m "MAJ produit" && git push`
 5. Le redéploiement sur GitHub Pages se fait automatiquement (~1 minute)
 
 ### Ajouter un nouveau produit

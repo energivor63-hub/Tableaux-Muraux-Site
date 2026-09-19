@@ -525,7 +525,7 @@ app.post('/api/control-tower/update-product', async (req, res) => {
       champs,
       statut: 'Édition Réussie via Tour de Contrôle (fiche réécrite sans décalage, image inchangée)'
     };
-    const journalJsonPath = path.join(ROOT_DIR, 'journal_integrations.json');
+    const journalJsonPath = JOURNAL_INTEGRATIONS_PATH;
     let history = [];
     try { history = JSON.parse(fs.readFileSync(journalJsonPath, 'utf-8')); } catch (e) { history = []; }
     if (!Array.isArray(history)) history = [];
@@ -620,7 +620,7 @@ function masquerReponseBrute(reponseBrute) {
  * fin de fichier : un `-Tail` ne montre que les entrées les plus anciennes). */
 function journaliserIntegration(entree) {
   try {
-    const chemin = path.join(ROOT_DIR, 'journal_integrations.json');
+    const chemin = JOURNAL_INTEGRATIONS_PATH;
     let hist = [];
     try { hist = JSON.parse(fs.readFileSync(chemin, 'utf-8')); } catch (e) { hist = []; }
     if (!Array.isArray(hist)) hist = [];
@@ -703,7 +703,13 @@ async function verifierUrlMedia(cible) {
 //   journal_integrations.json (racine) : une entrée par tentative (produit,
 //   réseau, hash du contenu, horodatage, statut HTTP + corps JSON Composio).
 // ─────────────────────────────────────────────────────────────────────────
-const JOURNAL_INTEGRATIONS_PATH = path.join(ROOT_DIR, 'journal_integrations.json');
+// SANDBOX TEST (18/09/2026) : les suites de test démarrent le serveur avec
+// JOURNAL_INTEGRATIONS_PATH = copie TEMP du journal vidée de ses entrées
+// sociales → le garde-fou 24 h est inactif en début de suite et le journal
+// RÉEL n'est jamais lu ni écrit pendant les tests. Fallback = chemin réel
+// (comportement production inchangé quand la variable est absente).
+const JOURNAL_INTEGRATIONS_PATH = process.env.JOURNAL_INTEGRATIONS_PATH
+  || path.join(ROOT_DIR, 'journal_integrations.json');
 
 /** Lecture robuste du journal d'intégrations (jamais d'exception bloquante). */
 function lireJournalIntegrations() {
@@ -1340,7 +1346,10 @@ async function publierViaComposio({ reseau, produit, produitNom, texte, mediaUrl
 }
 
 const SOCIAL_JOURNAL_DIR = path.join(ROOT_DIR, 'dashboard', 'journaux');
-const SOCIAL_JOURNAL_PATH = path.join(SOCIAL_JOURNAL_DIR, 'social-journal.json');
+// SANDBOX TEST (18/09/2026) : même mécanisme que JOURNAL_INTEGRATIONS_PATH —
+// les suites pointent le journal social vers un fichier TEMP (fallback réel).
+const SOCIAL_JOURNAL_PATH = process.env.SOCIAL_JOURNAL_PATH
+  || path.join(SOCIAL_JOURNAL_DIR, 'social-journal.json');
 const SOCIAL_DRAFTS_PATH = path.join(SOCIAL_JOURNAL_DIR, 'social-drafts.json');
 
 // Garantir l'existence du dossier journaux

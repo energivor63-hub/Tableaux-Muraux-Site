@@ -345,7 +345,7 @@ Changez les codes hexadécimaux pour modifier les couleurs.
 1. 📸 Prendre une photo du nouveau tableau
 2. 📝 Éditer `ajouter_produit_auto.txt` : ligne `source:` + champs produit
 3. 🤖 Exécuter `python ajouter_produit_auto.py` (aucune question posée)
-4. 🚀 Committer et pousser (`git add -A && git commit -m "Nouveau produit : ..." && git push`)
+4. 🚀 Committer et pousser **depuis `site-web` uniquement** — seul dépôt poussé (`git add -A && git commit -m "Nouveau produit : ..." && git push` ; jamais de push à la racine, dépôt racine local-only depuis le 18/09/2026)
 
 ### Workflow hebdomadaire
 
