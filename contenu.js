@@ -690,6 +690,24 @@ const CONTENU_SITE = {
   },
 
   // ─────────────────────────────────────────────────────────────
+  // 📞 SECTION CONTACT (textes modifiables ici)
+  // ─────────────────────────────────────────────────────────────
+  // ✏️ Modifiez ces textes pour personnaliser la section contact.
+  //    Les valeurs ci-dessous sont injectées dans index.html via
+  //    les attributs data-contenu="contact.*" (moteur injection-contenu.js).
+  // ─────────────────────────────────────────────────────────────
+  contact: {
+    sectionTag: "Contact",
+    sectionTitle: "Commandez votre tableau",
+    sectionDesc: "Contactez-nous directement via WhatsApp pour une réponse rapide",
+    infoTitle: "Parlons de votre projet",
+    infoDesc: "Que vous ayez une idée précise ou besoin de conseils, nous sommes là pour vous accompagner dans la création de votre tableau idéal. Réponse garantie en moins de 24 heures !",
+    visualTitle: "🎨 Commandez maintenant",
+    visualDesc: "Obtenez votre tableau personnalisé en quelques jours seulement",
+    btnWhatsapp: "Commander sur WhatsApp"
+  },
+
+  // ─────────────────────────────────────────────────────────────
   // 🎨 LOGO WHATSAPP OFFICIEL (SVG path)
   // NE PAS MODIFIER sauf si vous savez ce que vous faites
   // ─────────────────────────────────────────────────────────────
