@@ -331,6 +331,49 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
   };
 }
 
+/** Limite Buffer : un post Pinterest ne peut pas dépasser 500 caractères
+ * (InvalidInputError « Pinterest posts cannot exceed 500 characters » —
+ * 3 échecs réels le 19/09/2026 : le texte envoyé = TITRE + "\n" + DESCRIPTION).
+ * Le compteur du dashboard ne mesurait QUE la description : le garde-fou
+ * s'applique ici, sur le TOTAL, juste avant createPost. */
+export const PINTEREST_LIMITE_TOTALE = 500;
+
+/**
+ * Garde-fou Pinterest ≤ 500 caractères (total titre + 1 + description).
+ * Si le total dépasse : (a) la ligne « Commande directe : … wa.me … » est
+ * retirée d'abord (le lien part via metadata.pinterest.url, pas le texte) ;
+ * (b) si encore > 500, tronquature PROPRE de la DESCRIPTION seule — titre
+ * préservé intégralement, coupe au dernier espace avant (500 − titre − 1),
+ * + « … » (la ligne « Mots-clés : … », en fin de description, saute en premier).
+ * Renvoie { texte, titre, description, tronque, totalAvant, totalApres }.
+ */
+export function appliquerLimitePinterest500(texte) {
+  const brut = String(texte || '');
+  const coupe = brut.indexOf('\n');
+  const titre = coupe === -1 ? brut : brut.slice(0, coupe);
+  let description = coupe === -1 ? '' : brut.slice(coupe + 1);
+  const total = () => titre.length + 1 + description.length;
+  const totalAvant = total();
+  if (totalAvant <= PINTEREST_LIMITE_TOTALE) {
+    return { texte: brut, titre, description, tronque: false, totalAvant, totalApres: totalAvant };
+  }
+  // (a) La ligne WhatsApp saute : le lien de destination voyage dans
+  // metadata.pinterest.url, pas dans le texte (économie ~45 caractères).
+  description = description.split(/\r?\n/)
+    .filter((ligne) => !/commande directe\s*:.*wa\.me/i.test(ligne))
+    .join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
+  if (total() <= PINTEREST_LIMITE_TOTALE) {
+    return { texte: titre + '\n' + description, titre, description, tronque: true, totalAvant, totalApres: total() };
+  }
+  // (b) Tronquature propre : titre intact, coupe au dernier espace + « … ».
+  const budget = PINTEREST_LIMITE_TOTALE - titre.length - 1;
+  let moignon = budget > 1 ? description.slice(0, budget - 1) : '';
+  const espace = moignon.lastIndexOf(' ');
+  if (espace > 0) moignon = moignon.slice(0, espace);
+  description = moignon + '…';
+  return { texte: titre + '\n' + description, titre, description, tronque: true, totalAvant, totalApres: total() };
+}
+
 /**
  * Orchestrateur serveur : UNE publication Buffer GraphQL pour UN réseau.
  *   1. canal = override .env SINON channels(input:{organizationId}) (cache 10 min) ;
@@ -344,9 +387,19 @@ export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, ti
   if (!SERVICE_ATTENDU[reseau]) throw new BufferGraphqlError(`Réseau non routé vers Buffer : ${reseau}`);
   const canalId = await resoudreCanalReseau({ reseau, env });
   let board = null;
+  // Garde-fou Pinterest ≤ 500 (total titre + description, 19/09/2026) : le
+  // texte envoyé ne dépasse JAMAIS la limite Buffer (InvalidInputError).
+  let limitePin = null;
   if (reseau === 'pinterest') {
     board = await resolvePinterestBoard({ apiKey: String(env.BUFFER_API_KEY || ''), channelId: canalId, env });
+    limitePin = appliquerLimitePinterest500(texte);
+    texte = limitePin.texte;
   }
   const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, env });
-  return { ...outcome, board, mode: 'shareNow' };
+  return {
+    ...outcome, board, mode: 'shareNow',
+    ...(limitePin && limitePin.tronque
+      ? { tronque: true, totalAvant: limitePin.totalAvant, totalApres: limitePin.totalApres }
+      : {})
+  };
 }

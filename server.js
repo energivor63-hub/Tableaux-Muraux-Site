@@ -1039,7 +1039,12 @@ async function executerPublication(body, ciblesForcees) {
           mode: 'shareNow',
           board: outcome && outcome.board
             ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url }
-            : undefined
+            : undefined,
+          // Garde-fou Pinterest ≤ 500 (19/09/2026) : tronquature propre
+          // tracée quand le total titre + description dépassait la limite.
+          tronque: (outcome && outcome.tronque) || undefined,
+          totalAvant: (outcome && outcome.totalAvant) || undefined,
+          totalApres: (outcome && outcome.totalApres) || undefined
         });
         if (outcome) {
           if (platform === 'pinterest' && outcome.board && outcome.board.url) postUrls.pinterest = outcome.board.url;
