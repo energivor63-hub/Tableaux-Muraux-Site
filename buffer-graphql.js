@@ -263,7 +263,7 @@ const MUTATION_CREATE_POST = `
  * la variante d'erreur ; l'ancien code concluait « succès » à tort).
  * Renvoie { postId, status, dueAt, channel, channelId, reponseBrute }.
  */
-export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', env = process.env } = {}) {
+export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', mediaType = 'image', videoUrl = '', env = process.env } = {}) {
   // ROUTAGE MODE (sonde live 2026-09-21 : ShareMode = addToQueue |
   // customScheduled | shareNext | shareNow ; SchedulingType = automatic |
   // notification) — 'now' → shareNow (immédiat) ; 'queue' → addToQueue +
@@ -271,6 +271,12 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
   // heure renvoyée dans post.dueAt). AUCUNE limite de volume ici (10/canal
   // gérée côté Buffer ; ses erreurs remontent telles quelles).
   const mode = modePublication === 'queue' ? 'addToQueue' : 'shareNow';
+  // 🎬 VIDÉO (sonde live 2026-09-22) : AssetInput { document | image | video } ;
+  // VideoAssetInput { url: NON_NULL String!, thumbnailUrl, metadata:
+  // VideoMetadataInput { thumbnailOffset, title } }. Si vidéo → assets =
+  // [{ video: { url } }] (url PUBLIQUE https, vérifiée côté server.js —
+  // JAMAIS localhost). L'alt text (ImageMetadataInput) ne s'applique qu'aux images.
+  const enVideo = mediaType === 'video';
   const input = {
     channelId, // NON_NULL ChannelId — SINGULIER (introspection 2026-09-17)
     text: texte || '',
@@ -278,9 +284,9 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
     mode,                        // NON_NULL ShareMode — shareNow (immédiat) | addToQueue (file d'attente)
     needsApproval: false,        // NON_NULL Boolean — publication directe, sans file d'approbation
     aiAssisted: true,            // disclosure IA (CreatePostInput.aiAssisted — SESSION 13)
-    assets: [{ image: { url: mediaUrl } }] // AssetInput { image: { url } } — url publique obligatoire
+    assets: enVideo ? [{ video: { url: videoUrl } }] : [{ image: { url: mediaUrl } }]
   };
-  if (altText) input.assets[0].image.metadata = { altText }; // ImageMetadataInput.altText
+  if (altText && !enVideo) input.assets[0].image.metadata = { altText }; // ImageMetadataInput.altText
   if (reseau === 'pinterest' && board) {
     input.metadata = { pinterest: { boardServiceId: board.serviceId } };
     if (titrePin) input.metadata.pinterest.title = titrePin;
@@ -395,11 +401,12 @@ export function appliquerLimitePinterest500(texte) {
  *   2. Pinterest : board officiel OBLIGATOIRE résolu via channel(input:) →
  *      PinterestMetadata.boards (site-web/buffer-pinterest.js, SESSION 10) ;
  *   3. mutation createPost (mode shareNow|addToQueue selon modePublication)
- *      avec la variante du réseau.
+ *      avec la variante du réseau ; média image (assets image) OU vidéo
+ *      (assets video, URL publique vérifiée côté server.js).
  * Renvoie { postId, status, dueAt, channelId, channel, board, mode } — lève
  * BufferGraphqlError (message + code) que server.js journalise.
  */
-export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', env = process.env } = {}) {
+export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', mediaType = 'image', videoUrl = '', env = process.env } = {}) {
   if (!SERVICE_ATTENDU[reseau]) throw new BufferGraphqlError(`Réseau non routé vers Buffer : ${reseau}`);
   const canalId = await resoudreCanalReseau({ reseau, env });
   let board = null;
@@ -417,7 +424,7 @@ export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, ti
     limitePin = appliquerLimitePinterest500(texte);
     texte = limitePin.texte;
   }
-  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, env });
+  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, mediaType, videoUrl, env });
   return {
     ...outcome, board, mode: outcome.mode || (modePublication === 'queue' ? 'addToQueue' : 'shareNow'),
     ...(limitePin && limitePin.tronque

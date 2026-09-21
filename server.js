@@ -665,6 +665,38 @@ async function verifierMediaPublic(mediaUrl, fiche) {
   return verifierUrlMedia(url);
 }
 
+/** URL VIDÉO PUBLIQUE (Buffer télécharge l'URL — localhost impossible).
+ * Les MP4 vivent HORS dépôt (../videos, jamais sur GitHub Pages) : l'URL
+ * publique est fournie par l'utilisateur (dashboard « URL vidéo publique »,
+ * ex. fichier catbox.moe — gratuit, sans compte). AUCUN upload auto codé.
+ * Refus actionnables (jamais de localhost envoyé) : URL vide → « fournir une
+ * URL publique » ; localhost/127 → interdite ; non-https → refusée ; sinon
+ * fetch Range bytes=0-0 → HTTP 200/206 + content-type video/* exigés. */
+async function verifierVideoPublique(videoUrl) {
+  const url = String(videoUrl || '').trim();
+  if (!url) {
+    return { ok: false, url, erreur: 'URL vidéo publique manquante — collez l’URL publique de la vidéo (ex. fichier catbox.moe, gratuit sans compte) ; localhost non publiable.' };
+  }
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(url)) {
+    return { ok: false, url, erreur: 'URL vidéo locale interdite (localhost) — Buffer ne peut pas la télécharger. Fournissez une URL publique https de la vidéo.' };
+  }
+  if (!/^https:\/\//i.test(url)) {
+    return { ok: false, url, erreur: 'URL vidéo non publique (HTTPS obligatoire) — envoi annulé. Fournissez une URL publique https de la vidéo.' };
+  }
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' } });
+    const type = String((r.headers && r.headers.get('content-type')) || '').trim();
+    console.log(`[media-check] ${url} → HTTP ${r.status} | content-type: ${type || '?'}`);
+    if ((r.status === 200 || r.status === 206) && /^video\//i.test(type)) {
+      return { ok: true, url };
+    }
+    return { ok: false, url, erreur: `Vidéo publique inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${url}` };
+  } catch (e) {
+    console.log(`[media-check] ${url} → ERREUR ${e.message}`);
+    return { ok: false, url, erreur: `Vidéo publique inaccessible (${e.message}) : ${url}` };
+  }
+}
+
 /** Check média unique : HTTP 200/206 + content-type image/* UNIQUEMENT —
  * JAMAIS de comparaison hash/taille avec le fichier local (GitHub sert
  * l'image pré-push jusqu'au push). Instrumentation demandée : URL exacte +
@@ -905,6 +937,11 @@ function resoudreTextesParReseau(plateformes, copies, fiche) {
 async function executerPublication(body, ciblesForcees) {
     const mediaUrlDemande = body.mediaUrl;
     const scheduleDate = body.scheduleDate || null;
+    // 🎬 MÉDIA : 'image' (défaut, URL publique GitHub Pages) ou 'video'
+    // (MP4 hors dépôt — Buffer exige une URL PUBLIQUE https fournie par
+    // l'utilisateur ; localhost refusé AVANT tout envoi, 0 mutation).
+    const mediaType = body.mediaType === 'video' ? 'video' : 'image';
+    const videoUrlDemande = String(body.videoUrl || '').trim();
     // Payload dashboard (« plateformes » + « copies ») ou legacy (« platform » + « content »)
     const platforms = (Array.isArray(ciblesForcees) && ciblesForcees.length)
       ? ciblesForcees
@@ -939,21 +976,44 @@ async function executerPublication(body, ciblesForcees) {
     const produitNom = (fiche && fiche.nom) || body.produitNom || null;
     const { textes, origine, variantes } = resoudreTextesParReseau(platforms, body.copies, fiche);
 
-    // 2 ─ Média : URL PUBLIQUE GitHub Pages vérifiée (fetch → 200) AVANT envoi
-    const verifMedia = await verifierMediaPublic(mediaUrlDemande, fiche);
-    if (!verifMedia.ok) {
-      journaliserIntegration({
-        type: 'pre-vol', integrateur: 'media', reseau: 'tous', produit,
-        statut: 'echec', erreur: verifMedia.erreur, mediaUrl: mediaUrlDemande,
-        cause: 'URL média non publique ou inaccessible (localhost interdit)'
-      });
-      return {
-        success: false, error: verifMedia.erreur,
-        erreursParIntegrateur: [], resultats: [],
-        reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes
-      };
+    // 2 ─ Média : URL PUBLIQUE vérifiée (fetch → 200/206) AVANT envoi.
+    // Image = GitHub Pages (verifierMediaPublic) ; vidéo = URL publique
+    // fournie (verifierVideoPublique — localhost refusé, 0 mutation).
+    // Les variantes texte sont INCHANGÉES (mêmes légendes/titres en vidéo).
+    let mediaUrl = null;
+    let videoUrl = null;
+    if (mediaType === 'video') {
+      const verifVideo = await verifierVideoPublique(videoUrlDemande);
+      if (!verifVideo.ok) {
+        journaliserIntegration({
+          type: 'pre-vol', integrateur: 'media', reseau: 'tous', produit,
+          statut: 'echec', erreur: verifVideo.erreur, mediaUrl: mediaUrlDemande,
+          videoUrl: videoUrlDemande || undefined, mediaType,
+          cause: 'URL vidéo non publique ou inaccessible (localhost interdit)'
+        });
+        return {
+          success: false, error: verifVideo.erreur,
+          erreursParIntegrateur: [], resultats: [],
+          reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes, mediaType
+        };
+      }
+      videoUrl = verifVideo.url;
+    } else {
+      const verifMedia = await verifierMediaPublic(mediaUrlDemande, fiche);
+      if (!verifMedia.ok) {
+        journaliserIntegration({
+          type: 'pre-vol', integrateur: 'media', reseau: 'tous', produit,
+          statut: 'echec', erreur: verifMedia.erreur, mediaUrl: mediaUrlDemande,
+          cause: 'URL média non publique ou inaccessible (localhost interdit)'
+        });
+        return {
+          success: false, error: verifMedia.erreur,
+          erreursParIntegrateur: [], resultats: [],
+          reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes, mediaType
+        };
+      }
+      mediaUrl = verifMedia.url;
     }
-    const mediaUrl = verifMedia.url;
 
     // 3 ─ Pré-vérification des clés (journalisée, puis échec rapide) —
     //    Buffer GraphQL exige BUFFER_API_KEY pour les 3 réseaux
@@ -1019,10 +1079,12 @@ async function executerPublication(body, ciblesForcees) {
       if (platform === 'facebook' || platform === 'instagram' || platform === 'pinterest') {
         // ── Buffer GraphQL (createPost) : Facebook + Instagram + Pinterest.
         // UNE mutation createPost par réseau avec SA variante de texte
-        // (genererVariantes inchangée) + média = URL publique GitHub Pages
-        // (pré-vérifiée 200 au-dessus) + mode shareNow (immédiat) OU addToQueue
-        // (file d'attente — prochain créneau, heure dans post.dueAt), selon
-        // body.modePublication ; schedulingType automatic dans les 2 cas.
+        // (genererVariantes inchangée — mêmes légendes en vidéo) + média =
+        // image (URL publique GitHub Pages) OU vidéo (URL publique fournie,
+        // assets [{ video: { url } }] — introspection VideoAssetInput
+        // 2026-09-22), pré-vérifié 200/206 au-dessus + mode shareNow (immédiat)
+        // OU addToQueue (file d'attente), selon body.modePublication ;
+        // schedulingType automatic dans les 2 cas.
         // Pinterest : board officiel OBLIGATOIRE (résolu dans buffer-graphql.js).
         let outcome = null;
         let erreurBuf = null;
@@ -1030,7 +1092,7 @@ async function executerPublication(body, ciblesForcees) {
           outcome = await publierViaBufferGraphql({
             reseau: platform, texte, mediaUrl,
             lien: copie.link || '', alt: copie.alt || '', titrePin: copie.title || '',
-            modePublication
+            modePublication, mediaType, videoUrl
           });
         } catch (bufErr) {
           erreurBuf = bufErr;
@@ -1052,7 +1114,8 @@ async function executerPublication(body, ciblesForcees) {
           // reponseBrute PAR RÉSEAU : réponse GraphQL brute (union typée /
           // errors[]) tronquée 2000 car., secrets masqués.
           reponseBrute: masquerReponseBrute((outcome && outcome.reponseBrute) || (erreurBuf && erreurBuf.reponseBrute)),
-          mediaUrl, hashContenu: hashContenu(texte), contenu: texte,
+          mediaUrl, videoUrl: videoUrl || undefined, mediaType,
+          hashContenu: hashContenu(texte), contenu: texte,
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
             : undefined,
@@ -1100,6 +1163,8 @@ async function executerPublication(body, ciblesForcees) {
           platform,
           content: texte,
           mediaUrl,
+          videoUrl: videoUrl || undefined,
+          mediaType,
           status: outcome ? 'published' : 'error',
           scheduleDate,
           integrateur: 'buffer',
@@ -1173,7 +1238,7 @@ async function executerPublication(body, ciblesForcees) {
         refusDoublon: refus,
         resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
         parReseau, postUrls, variantes, textesEnvoyes,
-        produit, produitNom, mediaUrl, modePublication, mode: modeBuffer, fileAttente
+        produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente
       };
     }
     return {
@@ -1185,7 +1250,7 @@ async function executerPublication(body, ciblesForcees) {
       refusDoublon: refus,
       resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
       parReseau, postUrls, variantes, textesEnvoyes,
-      produit, produitNom, mediaUrl, modePublication, mode: modeBuffer, fileAttente
+      produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente
     };
 }
 
@@ -1307,6 +1372,35 @@ app.post('/api/social/retry-failed', async (req, res) => {
     res.json(reponse);
   } catch (err) {
     res.json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/social/videos — inventaire des MP4 locaux (lecture dashboard).
+// Convention : videos/produit-N.mp4 (+ variante 9:16 videos/produit-N-reel.mp4).
+// Réponse : [{ produit, variante, fichier, urlLocale, tailleOctets }].
+// Dossier absent → [] (garde sans crash). La DURÉE est lue côté dashboard
+// (métadonnées <video> sur l'URL locale) — aucun ffprobe côté serveur.
+app.get('/api/social/videos', (req, res) => {
+  try {
+    if (!fs.existsSync(VIDEOS_DIR)) return res.json({ success: true, videos: [] });
+    const videos = fs.readdirSync(VIDEOS_DIR)
+      .filter((f) => /^produit-\d+(?:-reel)?\.mp4$/i.test(f))
+      .map((f) => {
+        const m = f.match(/^produit-(\d+)(-reel)?\.mp4$/i);
+        let tailleOctets = 0;
+        try { tailleOctets = fs.statSync(path.join(VIDEOS_DIR, f)).size; } catch (e) { tailleOctets = 0; }
+        return {
+          produit: `produit-${Number(m[1])}`,
+          variante: m[2] ? 'reel' : 'standard',
+          fichier: f,
+          urlLocale: `/videos/${encodeURIComponent(f)}`,
+          tailleOctets
+        };
+      })
+      .sort((a, b) => a.fichier.localeCompare(b.fichier));
+    res.json({ success: true, videos });
+  } catch (err) {
+    res.json({ success: false, error: err.message, videos: [] });
   }
 });
 
@@ -1683,6 +1777,19 @@ app.get('/tour-de-controle.html', (req, res) => {
 app.get('/tour', (req, res) => {
   res.redirect('/tour-de-controle.html');
 });
+
+// 1bis. 🎬 VIDÉOS LOCALES (lecture dashboard) : ../videos = dossier RACINE
+// (HORS site-web/ et HORS dépôt GitHub Pages — jamais commité).
+// Convention : videos/produit-N.mp4 (+ variante 9:16 videos/produit-N-reel.mp4).
+// GARDE : dossier racine absent → route inactive SANS crash (pas de statique
+// vers un dossier inexistant, aucun envoi impacté).
+const VIDEOS_DIR = path.join(ROOT_DIR, 'videos');
+if (fs.existsSync(VIDEOS_DIR)) {
+  app.use('/videos', express.static(VIDEOS_DIR, { index: false }));
+  console.log(`[videos] lecture locale active : ${VIDEOS_DIR} → http://localhost:${PORT}/videos/produit-N.mp4`);
+} else {
+  console.log('[videos] dossier racine ../videos absent : route /videos inactive (lecture locale désactivée, sans crash).');
+}
 
 // 2. Fichiers statiques du site (images, CSS, JS) depuis SITE_DIR
 app.use(express.static(SITE_DIR, { index: false }));
