@@ -737,8 +737,13 @@ function entreeSucces(entree, identifiants, reseau) {
 }
 
 /**
- * GARDE-FOU ANTI-DOUBLON : refuse tout renvoi vers le MÊME réseau sous 24 h.
- * Seuls les SUCCÈS bloquent (un échec peut toujours être réessayé).
+ * GARDE-FOU ANTI-DOUBLON (UNIQUE) : refuse tout renvoi vers le MÊME réseau
+ * sous 24 h — identique pour 'now' (shareNow) et 'queue' (addToQueue).
+ * Une entrée 'queue' à succès COMPTE comme publication (elle partira au
+ * prochain créneau Buffer) → bloque un doublon même non encore envoyé.
+ * Seuls les SUCCÈS bloquent (un échec Buffer — ex. file 10/10 pleine — peut
+ * toujours être réessayé ; l'erreur Buffer remonte telle quelle, AUCUN quota
+ * de volume n'est inventé côté app).
  * `identifiants` = tableau (slug produit-N, nom d'œuvre, rang…).
  * Retourne { bloque, message, heures, derniere }.
  */
@@ -755,7 +760,7 @@ function verifierAntiDoublon(identifiants, reseau, forcer) {
     bloque: true,
     heures,
     derniere,
-    message: `${LABEL_RESEAU[reseau] || reseau} déjà publié il y a ${heures} h — cochez « Forcer » pour republier.`
+    message: `${LABEL_RESEAU[reseau] || reseau} déjà programmé/publié il y a ${heures} h — cochez « Forcer » pour republier.`
   };
 }
 
@@ -910,6 +915,15 @@ async function executerPublication(body, ciblesForcees) {
       return { success: false, error: 'Aucune plateforme cible dans la requête', resultats: [], reseauxPublies: [], reseauxEchoues: [] };
     }
     const forcer = body.forcer === true || body.forcerRepublication === true;
+    // ROUTAGE MODE (bouton « 📬 File d'attente Buffer ») : 'queue' → Buffer
+    // mode addToQueue + schedulingType automatic (prochain créneau du canal,
+    // heure renvoyée dans post.dueAt) ; défaut 'now' → shareNow (inchangé).
+    // AUCUNE limite de volume côté serveur : l'utilisateur choisit
+    // canaux/volumes, la limite 10/canal est gérée côté Buffer (ses erreurs
+    // remontent telles quelles, message + code).
+    const modePublication = body.modePublication === 'queue' ? 'queue' : 'now';
+    const modeBuffer = modePublication === 'queue' ? 'addToQueue' : 'shareNow';
+    const fileAttente = modePublication === 'queue';
 
     // 1 ─ Fiche produit + variantes DISTINCTES par réseau
     const critere = body.produitId || body.produitNom || nomProduitDepuisUrl(mediaUrlDemande) || null;
@@ -1006,15 +1020,17 @@ async function executerPublication(body, ciblesForcees) {
         // ── Buffer GraphQL (createPost) : Facebook + Instagram + Pinterest.
         // UNE mutation createPost par réseau avec SA variante de texte
         // (genererVariantes inchangée) + média = URL publique GitHub Pages
-        // (pré-vérifiée 200 au-dessus) + mode shareNow (publication immédiate —
-        // le schéma n'expose PAS de « publishNow », cf. buffer-graphql.js).
+        // (pré-vérifiée 200 au-dessus) + mode shareNow (immédiat) OU addToQueue
+        // (file d'attente — prochain créneau, heure dans post.dueAt), selon
+        // body.modePublication ; schedulingType automatic dans les 2 cas.
         // Pinterest : board officiel OBLIGATOIRE (résolu dans buffer-graphql.js).
         let outcome = null;
         let erreurBuf = null;
         try {
           outcome = await publierViaBufferGraphql({
             reseau: platform, texte, mediaUrl,
-            lien: copie.link || '', alt: copie.alt || '', titrePin: copie.title || ''
+            lien: copie.link || '', alt: copie.alt || '', titrePin: copie.title || '',
+            modePublication
           });
         } catch (bufErr) {
           erreurBuf = bufErr;
@@ -1027,7 +1043,9 @@ async function executerPublication(body, ciblesForcees) {
           statut: outcome ? 'succes' : 'echec',
           httpStatus: outcome ? 200 : ((erreurBuf && erreurBuf.httpStatus) || null),
           message: outcome
-            ? `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode ${outcome.mode})`
+            ? (fileAttente
+              ? `Ajouté à la file Buffer (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode addToQueue${outcome.dueAt ? `, envoi prévu : ${outcome.dueAt}` : ''})`
+              : `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode ${outcome.mode || modeBuffer})`)
             : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
           cause: outcome ? null : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
           code: erreurBuf && erreurBuf.code ? erreurBuf.code : undefined,
@@ -1038,7 +1056,9 @@ async function executerPublication(body, ciblesForcees) {
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
             : undefined,
-          mode: 'shareNow',
+          mode: (outcome && outcome.mode) || modeBuffer,
+          fileAttente,
+          dueAtRetour: (outcome && outcome.dueAt) || null,
           board: outcome && outcome.board
             ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url }
             : undefined,
@@ -1053,8 +1073,13 @@ async function executerPublication(body, ciblesForcees) {
           resultats.push({
             reseau: platform, integrateur: 'buffer', succes: true,
             action: 'createPost', httpStatus: 200,
-            message: `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId}`,
+            message: fileAttente
+              ? `Ajouté à la file Buffer (${LABEL_RESEAU[platform]}) — post ${outcome.postId}${outcome.dueAt ? ` — envoi prévu : ${outcome.dueAt}` : ''}`
+              : `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId}`,
             postId: outcome.postId,
+            mode: outcome.mode || modeBuffer,
+            fileAttente,
+            dueAt: outcome.dueAt || null,
             reponseBrute: masquerReponseBrute(outcome.reponseBrute),
             board: outcome.board || undefined
           });
@@ -1070,7 +1095,7 @@ async function executerPublication(body, ciblesForcees) {
           });
         }
         journal.unshift({
-          id: `pub_${Date.now()}_${platform}`,
+          id: `${fileAttente ? 'queue' : 'pub'}_${Date.now()}_${platform}`,
           date: new Date().toISOString(),
           platform,
           content: texte,
@@ -1078,7 +1103,9 @@ async function executerPublication(body, ciblesForcees) {
           status: outcome ? 'published' : 'error',
           scheduleDate,
           integrateur: 'buffer',
-          mode: 'shareNow',
+          mode: (outcome && outcome.mode) || modeBuffer,
+          fileAttente,
+          dueAt: (outcome && outcome.dueAt) || null,
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
             : undefined,
@@ -1119,7 +1146,7 @@ async function executerPublication(body, ciblesForcees) {
     const reseauxNonEnvoyes = [];
     const parReseau = {};
     resultats.forEach((r) => {
-      parReseau[r.reseau] = { statut: r.succes ? 'succes' : 'echec', message: r.message };
+      parReseau[r.reseau] = { statut: r.succes ? 'succes' : 'echec', message: r.message, mode: r.mode || modeBuffer, fileAttente: !!r.fileAttente, dueAt: r.dueAt || null };
     });
     refus.forEach((r) => {
       parReseau[r.reseau] = { statut: 'refus', message: r.message };
@@ -1146,19 +1173,19 @@ async function executerPublication(body, ciblesForcees) {
         refusDoublon: refus,
         resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
         parReseau, postUrls, variantes, textesEnvoyes,
-        produit, produitNom, mediaUrl
+        produit, produitNom, mediaUrl, modePublication, mode: modeBuffer, fileAttente
       };
     }
     return {
       success: true,
       succesPartiel: false,
       platform: autorises.join(','),
-      message: 'Publie via Buffer (GraphQL)',
+      message: fileAttente ? 'Ajouté à la file Buffer (GraphQL)' : 'Publie via Buffer (GraphQL)',
       erreursParIntegrateur: [],
       refusDoublon: refus,
       resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
       parReseau, postUrls, variantes, textesEnvoyes,
-      produit, produitNom, mediaUrl
+      produit, produitNom, mediaUrl, modePublication, mode: modeBuffer, fileAttente
     };
 }
 
