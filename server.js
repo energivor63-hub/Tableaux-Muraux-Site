@@ -695,6 +695,10 @@ async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
   }
   const tailleAttendue = Number(tailleAttendueOctets);
   const tailleConnue = Number.isFinite(tailleAttendue) && tailleAttendue > 0;
+  // Chiffres remontés pour la route /api/social/verifier-video (pré-contrôle
+  // dashboard délégué — le navigateur, bloqué par CORS, ne peut pas les lire).
+  let contentLength = null;
+  let contentType = null;
   // 1) HEAD d'abord : refuse les hébergeurs à HEAD malhonnête AVANT tout GET.
   try {
     const h = await fetch(url, { method: 'HEAD' });
@@ -702,15 +706,18 @@ async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
     if (h.ok) {
       const typeHead = String(h.headers.get('content-type') || '').trim();
       if (typeHead && !/^video\//i.test(typeHead)) {
-        return { ok: false, url, erreur: `Vidéo refusée : l’hébergeur annonce content-type « ${typeHead} » (vidéo attendue) — hébergeur incompatible Buffer, choisissez Internet Archive / B2 / R2 : ${url}` };
+        return { ok: false, url, contentLength, contentType: typeHead || null, erreur: `Vidéo refusée : l’hébergeur annonce content-type « ${typeHead} » (vidéo attendue) — hébergeur incompatible Buffer, choisissez Internet Archive / B2 / R2 : ${url}` };
       }
-      const annonce = Number(h.headers.get('content-length'));
+      if (/^video\//i.test(typeHead)) contentType = typeHead;
+      const clBrut = h.headers.get('content-length');
+      const annonce = clBrut === null ? NaN : Number(clBrut);
       if (Number.isFinite(annonce)) {
         if (annonce <= 0) {
-          return { ok: false, url, erreur: `Vidéo refusée : hébergeur incompatible Buffer (HEAD Content-Length: ${annonce}) — le fichier répond en GET mais Buffer le rejette (« Video could not be read »). Choisissez Internet Archive / B2 / R2 : ${url}` };
+          return { ok: false, url, contentLength: annonce, contentType, erreur: `Vidéo refusée : hébergeur incompatible Buffer (HEAD Content-Length: ${annonce}) — le fichier répond en GET mais Buffer le rejette (« Video could not be read »). Choisissez Internet Archive / B2 / R2 : ${url}` };
         }
+        contentLength = annonce;
         if (tailleConnue && annonce !== tailleAttendue) {
-          return { ok: false, url, erreur: `Vidéo refusée : taille HEAD (${annonce} o) ≠ taille attendue (${tailleAttendue} o) — fichier différent ou tronqué. Choisissez Internet Archive / B2 / R2 : ${url}` };
+          return { ok: false, url, contentLength: annonce, contentType, erreur: `Vidéo refusée : taille HEAD (${annonce} o) ≠ taille attendue (${tailleAttendue} o) — fichier différent ou tronqué. Choisissez Internet Archive / B2 / R2 : ${url}` };
         }
       }
     }
@@ -724,12 +731,18 @@ async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
     const type = String((r.headers && r.headers.get('content-type')) || '').trim();
     console.log(`[media-check] ${url} → HTTP ${r.status} | content-type: ${type || '?'}`);
     if ((r.status === 200 || r.status === 206) && /^video\//i.test(type)) {
-      return { ok: true, url };
+      if (contentLength === null) {
+        const plage = String((r.headers && r.headers.get('content-range')) || '');
+        const total = plage.match(/\/(\d+)\s*$/);
+        const cl = Number(r.headers.get('content-length'));
+        contentLength = total ? Number(total[1]) : (Number.isFinite(cl) && cl > 1 ? cl : null);
+      }
+      return { ok: true, url, contentLength, contentType: type };
     }
-    return { ok: false, url, erreur: `Vidéo publique inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${url}` };
+    return { ok: false, url, contentLength, contentType: (/^video\//i.test(type) ? type : contentType), erreur: `Vidéo publique inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${url}` };
   } catch (e) {
     console.log(`[media-check] ${url} → ERREUR ${e.message}`);
-    return { ok: false, url, erreur: `Vidéo publique inaccessible (${e.message}) : ${url}` };
+    return { ok: false, url, contentLength, contentType, erreur: `Vidéo publique inaccessible (${e.message}) : ${url}` };
   }
 }
 
@@ -1443,6 +1456,30 @@ app.get('/api/social/videos', (req, res) => {
     res.json({ success: true, videos });
   } catch (err) {
     res.json({ success: false, error: err.message, videos: [] });
+  }
+});
+
+// GET /api/social/verifier-video?url=… — pré-contrôle vidéo DÉLÉGUÉ au serveur.
+// Le navigateur ne peut PAS vérifier les URLs cross-origin avec redirect
+// (ex. miroirs archive.org sans CORS → NetworkError, boutons bloqués À TORT)
+// : seule autorité fiable = le serveur (verifierVideoPublique : HEAD
+// Content-Length honnête + Range, sans CORS — mêmes gardes et mêmes messages
+// actionnables que l'envoi : localhost, https, HEAD 0, type non-video).
+// Réponse : { ok, cause, contentLength, contentType, url }.
+app.get('/api/social/verifier-video', async (req, res) => {
+  try {
+    const url = String(req.query.url || '').trim();
+    const taille = Number(req.query.tailleAttendue);
+    const v = await verifierVideoPublique(url, Number.isFinite(taille) && taille > 0 ? taille : undefined);
+    res.type('application/json').json({
+      ok: v.ok === true,
+      cause: v.ok ? null : (v.erreur || 'Vérification impossible'),
+      contentLength: (v.contentLength ?? null),
+      contentType: (v.contentType || null),
+      url: v.url ?? null
+    });
+  } catch (err) {
+    res.type('application/json').json({ ok: false, cause: err.message, contentLength: null, contentType: null, url: null });
   }
 });
 
