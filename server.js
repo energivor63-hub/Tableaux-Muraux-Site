@@ -670,19 +670,55 @@ async function verifierMediaPublic(mediaUrl, fiche) {
  * publique est fournie par l'utilisateur (dashboard « URL vidéo publique »,
  * ex. fichier catbox.moe — gratuit, sans compte). AUCUN upload auto codé.
  * Refus actionnables (jamais de localhost envoyé) : URL vide → « fournir une
- * URL publique » ; localhost/127 → interdite ; non-https → refusée ; sinon
- * fetch Range bytes=0-0 → HTTP 200/206 + content-type video/* exigés. */
-async function verifierVideoPublique(videoUrl) {
+ * URL publique » ; localhost/127 → interdite ; non-https → refusée ; puis
+ * DOUBLE CONTRÔLE :
+ *   1) HEAD d'abord — HEAD honnête exigé : statut 2xx + Content-Length > 0
+ *      (et == tailleAttendueOctets si connue). Certains hébergeurs (ex.
+ *      catbox.moe) annoncent Content-Length: 0 alors que le GET Range
+ *      fonctionne — mais Buffer rejette ces URLs (« Video could not be
+ *      read ») → refus actionnable « hébergeur incompatible Buffer —
+ *      choisissez Internet Archive / B2 / R2 » ;
+ *   2) Range GET bytes=0-0 conservé — HTTP 200/206 + content-type video/*.
+ * TEST-ONLY : ALLOW_LOCAL_VIDEO_URL_TEST=1 lève la barrière localhost/http
+ * (faux serveur vidéo local) — JAMAIS en production. */
+async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
   const url = String(videoUrl || '').trim();
   if (!url) {
     return { ok: false, url, erreur: 'URL vidéo publique manquante — collez l’URL publique de la vidéo (ex. fichier catbox.moe, gratuit sans compte) ; localhost non publiable.' };
   }
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(url)) {
+  const testLocalAutorise = process.env.ALLOW_LOCAL_VIDEO_URL_TEST === '1'; // TEST-ONLY
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(url) && !testLocalAutorise) {
     return { ok: false, url, erreur: 'URL vidéo locale interdite (localhost) — Buffer ne peut pas la télécharger. Fournissez une URL publique https de la vidéo.' };
   }
-  if (!/^https:\/\//i.test(url)) {
+  if (!/^https:\/\//i.test(url) && !testLocalAutorise) {
     return { ok: false, url, erreur: 'URL vidéo non publique (HTTPS obligatoire) — envoi annulé. Fournissez une URL publique https de la vidéo.' };
   }
+  const tailleAttendue = Number(tailleAttendueOctets);
+  const tailleConnue = Number.isFinite(tailleAttendue) && tailleAttendue > 0;
+  // 1) HEAD d'abord : refuse les hébergeurs à HEAD malhonnête AVANT tout GET.
+  try {
+    const h = await fetch(url, { method: 'HEAD' });
+    console.log(`[media-check] HEAD ${url} → HTTP ${h.status} | content-length: ${h.headers.get('content-length') ?? '?'} | content-type: ${h.headers.get('content-type') || '?'}`);
+    if (h.ok) {
+      const typeHead = String(h.headers.get('content-type') || '').trim();
+      if (typeHead && !/^video\//i.test(typeHead)) {
+        return { ok: false, url, erreur: `Vidéo refusée : l’hébergeur annonce content-type « ${typeHead} » (vidéo attendue) — hébergeur incompatible Buffer, choisissez Internet Archive / B2 / R2 : ${url}` };
+      }
+      const annonce = Number(h.headers.get('content-length'));
+      if (Number.isFinite(annonce)) {
+        if (annonce <= 0) {
+          return { ok: false, url, erreur: `Vidéo refusée : hébergeur incompatible Buffer (HEAD Content-Length: ${annonce}) — le fichier répond en GET mais Buffer le rejette (« Video could not be read »). Choisissez Internet Archive / B2 / R2 : ${url}` };
+        }
+        if (tailleConnue && annonce !== tailleAttendue) {
+          return { ok: false, url, erreur: `Vidéo refusée : taille HEAD (${annonce} o) ≠ taille attendue (${tailleAttendue} o) — fichier différent ou tronqué. Choisissez Internet Archive / B2 / R2 : ${url}` };
+        }
+      }
+    }
+    // HEAD non-2xx ou sans Content-Length : non concluant → second contrôle.
+  } catch (e) {
+    console.log(`[media-check] HEAD ${url} → ERREUR ${e.message} (second contrôle Range conservé)`);
+  }
+  // 2) Range GET bytes=0-0 (contrôle conservé) : HTTP 200/206 + video/*.
   try {
     const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' } });
     const type = String((r.headers && r.headers.get('content-type')) || '').trim();
@@ -983,7 +1019,13 @@ async function executerPublication(body, ciblesForcees) {
     let mediaUrl = null;
     let videoUrl = null;
     if (mediaType === 'video') {
-      const verifVideo = await verifierVideoPublique(videoUrlDemande);
+      // videoTailleOctets (optionnel) : comparée au HEAD Content-Length quand
+      // le dashboard la connaît (sinon seul « > 0 » est exigé).
+      const tailleAttendue = Number(body.videoTailleOctets);
+      const verifVideo = await verifierVideoPublique(
+        videoUrlDemande,
+        Number.isFinite(tailleAttendue) && tailleAttendue > 0 ? tailleAttendue : undefined
+      );
       if (!verifVideo.ok) {
         journaliserIntegration({
           type: 'pre-vol', integrateur: 'media', reseau: 'tous', produit,
