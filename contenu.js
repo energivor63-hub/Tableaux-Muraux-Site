@@ -88,6 +88,26 @@ const CONTENU_SITE = {
   ],
 
   // ─────────────────────────────────────────────────────────────
+  // 🛠️ NOTRE MÉTIER 3D (11 étapes : création PC → accrochage mur)
+  // Source de vérité de la section #process (index.html).
+  // Textes modifiables sans toucher au code. Images locales
+  // site-web/images/metier/metier-01..11.jpg (≤ 500 Ko).
+  // ─────────────────────────────────────────────────────────────
+  metier: [
+    { n: 1, titre: "Création sur PC", desc: "Nos artistes conçoivent la composition sur ordinateur, guidés par la richesse visuelle du Maroc et les tendances contemporaines.", image: "images/metier/metier-01.jpg", alt: "Création de l'œuvre sur PC" },
+    { n: 2, titre: "Châssis en bois", desc: "Découpe et assemblage du châssis en bois massif par nos menuisiers de Marrakech.", image: "images/metier/metier-02.jpg", alt: "Fabrication du châssis en bois" },
+    { n: 3, titre: "Cadre posé", desc: "Le cadre est posé et ajusté avec précision avant d'accueillir la toile imprimée.", image: "images/metier/metier-03.jpg", alt: "Cadre en bois posé" },
+    { n: 4, titre: "Tension de la toile", desc: "La toile haute définition est tendue uniformément pour une surface parfaitement plane.", image: "images/metier/metier-04.jpg", alt: "Tension de la toile sur cadre" },
+    { n: 5, titre: "Agrafage au dos", desc: "Agrafage soigné au dos du cadre : finition nette, toile fermement maintenue.", image: "images/metier/metier-05.jpg", alt: "Agrafage de la toile au dos" },
+    { n: 6, titre: "Toile tendue", desc: "La toile tendue révèle des couleurs éclatantes et une netteté de qualité muséale.", image: "images/metier/metier-06.jpg", alt: "Toile tendue terminée" },
+    { n: 7, titre: "Cadre américain", desc: "Option cadre américain : la toile flotte dans un cadre en bois pour un rendu galerie.", image: "images/metier/metier-07.jpg", alt: "Cadre américain flottant" },
+    { n: 8, titre: "Montage final", desc: "Montage expert et vérification des assemblages pour une solidité durable.", image: "images/metier/metier-08.jpg", alt: "Montage final du tableau" },
+    { n: 9, titre: "Contrôle qualité", desc: "Chaque œuvre est inspectée : couleurs, tension, finitions — zéro défaut avant livraison.", image: "images/metier/metier-09.jpg", alt: "Contrôle qualité de l'œuvre" },
+    { n: 10, titre: "Accrochage au mur", desc: "Accrochage soigné chez vous : mise en valeur immédiate de votre intérieur.", image: "images/metier/metier-10.jpg", alt: "Accrochage du tableau au mur" },
+    { n: 11, titre: "Rendu final en ambiance", desc: "Le tableau sublimé dans votre salon, riad ou bureau — l'émotion d'une œuvre unique.", image: "images/metier/metier-11.jpg", alt: "Rendu final du tableau en ambiance" }
+  ],
+
+  // ─────────────────────────────────────────────────────────────
   // 🧱 MATÉRIAUX PREMIUM
   // ─────────────────────────────────────────────────────────────
   materiaux: [
