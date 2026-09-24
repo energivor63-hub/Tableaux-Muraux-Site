@@ -350,6 +350,21 @@ Changez les codes hexadécimaux pour modifier les couleurs.
 
 ---
 
+## 💨 Cache-bust automatique `?v=` (MICRO 24/09)
+
+Les balises `<script src="contenu.js?v=…">` (index + dashboard) portent un hash
+court recalculé **automatiquement après chaque réécriture** de `contenu.js`
+(Tour de Contrôle, synchro, poser_panneaux) : les visiteurs reçoivent toujours
+la version fraîche, jamais l'ancien fichier en cache.
+
+Si vous éditez `contenu.js` **à la main**, relancez le recalcul vous-même :
+```bash
+node registre/bump_cache.mjs
+```
+(Sans `?v=` à jour, les visiteurs garderaient l'ancienne version en cache.)
+
+---
+
 ## 📞 Besoin d'aide ?
 
 Si vous rencontrez un problème non documenté ici :

@@ -1408,7 +1408,41 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
   const newContent = bodyStart.slice(0, target.start) + newBlock + bodyStart.slice(target.end);
   fs.writeFileSync(CONTENU_JS, (hasBom ? '\uFEFF' : '') + newContent, 'utf-8');
 
-  return { code: 0, productRank, newImageRel, oldImageRel: oldProduct.image || '' };
+  // 💨 Cache-bust dynamique (MICRO 24/09) : ?v= recalculé après chaque réécriture.
+  const cacheBust = bumpCacheBust();
+
+  return { code: 0, productRank, newImageRel, oldImageRel: oldProduct.image || '', cacheBust };
+}
+
+/**
+ * 💨 Cache-bust dynamique (MICRO 24/09) : recalcule le hash court (8 hex sha256)
+ * de contenu.js ET injection-contenu.js et remplace leur ?v= dans
+ * SITE_DIR/index.html et <racine>/dashboard/dashboard.html.
+ * Regex : contenu\.js\?v=[0-9a-f]+ (idem injection) — ne touche rien si aucun
+ * ?v= présent ; index.html/dashboard.html sont réécrits à l'identique sinon
+ * (EOL/BOM intacts : remplacement regex seul, sans reformatage).
+ */
+export function bumpCacheBust() {
+  const sha8 = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex').slice(0, 8);
+  const contenuHash = sha8(CONTENU_JS);
+  const injectionPath = path.join(SITE_DIR, 'injection-contenu.js');
+  const injectionHash = fs.existsSync(injectionPath) ? sha8(injectionPath) : null;
+  const cibles = [
+    path.join(SITE_DIR, 'index.html'),
+    path.join(ROOT_DIR, 'dashboard', 'dashboard.html')
+  ];
+  const fichiersModifies = [];
+  for (const f of cibles) {
+    if (!fs.existsSync(f)) continue;
+    const avant = fs.readFileSync(f, 'utf-8');
+    let apres = avant.replace(/contenu\.js\?v=[0-9a-f]+/g, `contenu.js?v=${contenuHash}`);
+    if (injectionHash) apres = apres.replace(/injection-contenu\.js\?v=[0-9a-f]+/g, `injection-contenu.js?v=${injectionHash}`);
+    if (apres !== avant) {
+      fs.writeFileSync(f, apres, 'utf-8');
+      fichiersModifies.push(path.relative(ROOT_DIR, f).replace(/\\/g, '/'));
+    }
+  }
+  return { contenuHash, injectionHash, fichiersModifies };
 }
 /**
  * 🔐 SHA256 d'un fichier (lecture synchrone par blocs). Source de vérité de la
