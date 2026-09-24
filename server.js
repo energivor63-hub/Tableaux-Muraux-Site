@@ -47,7 +47,7 @@ import {
   plafonnerTitrePinterest, plafonnerAlt, plafonnerHashtags
 } from './social-variants.js';
 // 💰 Synchro prix (ajout v2) — import ADDITIF : aucune fonction existante retouchée.
-import { spawnNode, masquerSecrets } from './control-tower-engine.js';
+import { spawnNode, masquerSecrets, masquerReponseBrute } from './control-tower-engine.js';
 import crypto from 'crypto';
 
 
@@ -593,24 +593,7 @@ function integrateurPour(reseau) {
 }
 const LABEL_RESEAU = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest' };
 
-/** Masque toute clé/secrets avant journalisation (jamais de secret dans journal_integrations.json). */
-function masquerTexte(texte) {
-  let t = String(texte === undefined || texte === null ? '' : texte);
-  t = t.replace(/\b(?:ak|sk|gsk|pk)_[A-Za-z0-9_-]{4,}/g, (m) => m.slice(0, 3) + '***');
-  t = t.replace(/Bearer\s+[A-Za-z0-9._-]+/g, 'Bearer ***');
-  ['COMPOSIO_API_KEY', 'BUFFER_API_KEY', 'TOWER_SYNC_TOKEN', 'GROQ_API_KEY'].forEach((k) => {
-    const v = String(process.env[k] || '');
-    if (v.length >= 6) t = t.split(v).join(k + '_***');
-  });
-  return t;
-}
-
-/** Réponse brute (GraphQL/HTTP) pour le journal : secrets masqués puis TRONQUÉE
- * à 2000 caractères (masquage AVANT troncature : jamais de secret tronqué). */
-function masquerReponseBrute(reponseBrute) {
-  if (!reponseBrute) return undefined;
-  return masquerTexte(String(reponseBrute)).slice(0, 2000);
-}
+/** Masquage : fonction UNIQUE importée du moteur (P2a C5 — aucun doublon local). */
 
 /** Journal OBLIGATOIRE (journal_integrations.json) : entrée horodatée en TÊTE
  * du tableau. ORDRE D'INSERTION DOCUMENTÉ : `unshift` → les entrées les PLUS
@@ -1241,7 +1224,9 @@ async function executerPublication(body, ciblesForcees) {
           board: outcome && outcome.board
             ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url }
             : undefined,
-          error: outcome ? undefined : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue'
+          error: outcome ? undefined : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
+          // P2a (N2) : code d'erreur tracé pour la liste des erreurs sociales.
+          code: outcome ? undefined : ((erreurBuf && erreurBuf.code) || undefined)
         });
       } else {
         const message = `Plateforme non supportée : ${platform}`;

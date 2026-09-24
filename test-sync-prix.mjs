@@ -25,7 +25,9 @@ import { spawnNode, masquerSecrets } from './control-tower-engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..');
-const ROOT_ENV = path.join(ROOT_DIR, '.env');
+// P2a audit 24/09 (D4) : .env surchargeable (défaut = réel en prod, TEMP en tests —
+// le rename GROQ de la section [b] n'écrit alors JAMAIS le vrai .env).
+const ROOT_ENV = process.env.ENV_PATH || path.join(ROOT_DIR, '.env');
 const HTML_UNIFIE = path.join(ROOT_DIR, 'registre', 'Registre-Tarifs-2026-09-14-Unifie.html');
 const CONTENU_JS = path.join(__dirname, 'contenu.js');
 const SCRIPT_TARIFS = path.join(ROOT_DIR, 'registre', 'synchro_tarifs_unifie.mjs');

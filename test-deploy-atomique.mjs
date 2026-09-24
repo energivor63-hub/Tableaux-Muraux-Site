@@ -65,7 +65,10 @@ execFileSync('git', ['commit', '-m', 'init sandbox'], { cwd: SANDBOX_SITE });
 
 const engine = await import(pathToFileURL(SANDBOX_ENGINE).href);
 const catalogBefore = engine.getCurrentCatalog();
-check('sandbox prêt : 16 produits lus depuis la copie de contenu.js', catalogBefore.length === 16, `trouvé : ${catalogBefore.length}`);
+// P2a audit 24/09 (G2) : attendu calculé depuis le catalogue réel (25 produits,
+// plus de 16 codé en dur).
+const attenduFiches = (fs.readFileSync(SANDBOX_CONTENU, 'utf-8').match(/panneaux\s*:/g) || []).length;
+check(`sandbox prêt : ${attenduFiches} produits lus depuis la copie de contenu.js`, catalogBefore.length === attenduFiches, `trouvé : ${catalogBefore.length}`);
 
 const champsA = {
   nom: 'Arc de Test Nominal',
@@ -98,9 +101,11 @@ check('hash image vivante == hash staging', sha(path.join(SANDBOX_IMAGES, 'produ
 check('resultat expose imageSha256 == staging', resA.imageSha256 === hashStagingA);
 check('contenu.js : fiche rang 7 réécrite', engine.getCurrentCatalog()[6].nom === champsA.nom);
 check('contenu.js : BOM préservé', contenuBeforeA[0] === 0xEF && fs.readFileSync(SANDBOX_CONTENU)[0] === 0xEF);
-check('contenu.js : CRLF préservés', contenuBeforeA.includes(Buffer.from([13, 10])) && fs.readFileSync(SANDBOX_CONTENU).includes(Buffer.from([13, 10])));
+// P2a (G2) : EOL-agnostique — le style source (LF pur ici) doit être préservé tel quel.
+const styleEol = (b) => b.includes(Buffer.from([13, 10])) ? 'CRLF' : 'LF';
+check(`contenu.js : fins de ligne préservées (${styleEol(contenuBeforeA)})`, styleEol(contenuBeforeA) === styleEol(fs.readFileSync(SANDBOX_CONTENU)));
 const catalogAfterA = engine.getCurrentCatalog();
-check('contenu.js : les 10 autres fiches INCHANGÉES (zéro décalage)',
+check(`contenu.js : les ${attenduFiches - 1} autres fiches INCHANGÉES (zéro décalage)`,
   catalogBefore.every((p, i) => i === 6 || (p.nom === catalogAfterA[i].nom && p.image === catalogAfterA[i].image && p.prix === catalogAfterA[i].prix)));
 check('staging purgé après succès', fs.existsSync(SANDBOX_STAGING) && fs.readdirSync(SANDBOX_STAGING).length === 0);
 check('méta purge après succès', !fs.existsSync(path.join(SANDBOX_IMAGES, '_pending-meta.json')));
@@ -179,8 +184,8 @@ check('detectReplacementStaging ignore produit-0 (N ≥ 1 seulement)',
 console.log('\n▶ TEST E — cosmétique contenu.js réel + BOM/CRLF + node --check');
 const realContenu = fs.readFileSync(REAL_CONTENU);
 const realTxt = realContenu.toString('utf-8');
-check('produit-7 : « À partir de 100 MAD » (accent ajouté)', realTxt.includes('prix: "À partir de 100 MAD"'));
-check('aucun « A partir de 100 MAD » restant', !realTxt.includes('A partir de 100 MAD'));
+check('prix accentués « À partir de … MAD » présents', /prix: "À partir de \d+ MAD"/.test(realTxt));
+check('aucun « A partir de … » sans accent restant', !/prix: "A partir de \d+ MAD"/.test(realTxt));
 check('commentaire options : « commit + push GitHub »', realTxt.includes('redéployez le site via commit + push GitHub'));
 check('commentaire options : déploiement GitHub Pages', realTxt.includes('commit + push GitHub'));
 check('commentaire options : sans référence à l\u2019ancien hébergeur', !new RegExp('net' + 'lify', 'i').test(realTxt));
@@ -188,7 +193,10 @@ check('commentaire produits : environnements alignés (cabinet, ecole-primaire, 
 check('commentaire produits : plus de salle-de-bain/cuisine', !realTxt.includes('salle-de-bain') && !realTxt.includes('cuisine'));
 check('commentaire produits : art-deco, autres (styles)', realTxt.includes('minimaliste, boheme, art-deco, autres'));
 check('BOM préservé sur contenu.js réel', realContenu[0] === 0xEF && realContenu[1] === 0xBB && realContenu[2] === 0xBF);
-check('CRLF préservés sur contenu.js réel', realContenu.includes(Buffer.from([13, 10])));
+// P2a (G2) : le réel est LF pur — on exige l'homogénéité (zéro mélange LF/CRLF), pas CRLF.
+const eolReel = realContenu.includes(Buffer.from([13, 10])) ? 'CRLF' : 'LF';
+const sansCRLF = realContenu.toString('utf-8').replace(/\r\n/g, '');
+check(`EOL homogènes sur contenu.js réel (${eolReel}, sans mélange)`, eolReel === 'CRLF' ? !sansCRLF.includes('\n') : !sansCRLF.includes('\r'));
 for (const f of ['control-tower-engine.js', 'contenu.js', 'server.js']) {
   const r = spawnSync('node', ['--check', f], { cwd: REAL_SITE_DIR });
   check(`node --check ${f} → exit 0`, r.status === 0, r.stderr && r.stderr.toString('utf-8').slice(0, 300));

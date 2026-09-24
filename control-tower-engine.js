@@ -20,7 +20,9 @@ export const ROOT_DIR = isInsideSiteWeb ? path.resolve(__dirname, '..') : __dirn
 export const SITE_DIR = isInsideSiteWeb ? __dirname : (fs.existsSync(path.join(__dirname, 'site-web')) ? path.join(__dirname, 'site-web') : __dirname);
 
 // 🔑 Lecture du fichier .env à la RACINE du projet (C:\...\TableauxMuraux_Site\.env)
-export const ROOT_ENV_FILE = path.join(ROOT_DIR, '.env');
+// P2a audit 24/09 (D4) : surchargeable via ENV_PATH (défaut = réel en prod,
+// TEMP en tests — le serveur spawné par les suites lit alors le .env de test).
+export const ROOT_ENV_FILE = process.env.ENV_PATH || path.join(ROOT_DIR, '.env');
 if (fs.existsSync(ROOT_ENV_FILE)) {
   dotenv.config({ path: ROOT_ENV_FILE });
 } else {
@@ -1644,18 +1646,36 @@ export function commitAndPushSite(message, files) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * 🔒 Masque TOUTE clé Groq (gsk_xxxxx…) et le jeton TOWER_SYNC_TOKEN dans un
- * texte destiné à un log, un journal ou une réponse HTTP.
- * Règle d'or : « gsk_*** » — jamais la clé réelle.
+ * 🔒 Masquage UNIQUE partagé (P2a C5 — server.js l'importe, aucun doublon).
+ * Couvre : clés Groq (gsk_*** — assertion test-sync-prix conservée à l'identique),
+ * clés ak_/sk_/pk_, Bearer, et les 4 valeurs d'env secrètes (jamais en clair).
+ * Règle d'or : masquage AVANT toute troncature (voir masquerReponseBrute).
  */
 export function masquerSecrets(texte) {
   let s = String(texte === undefined || texte === null ? '' : texte);
   s = s.replace(/gsk_[A-Za-z0-9]+/g, 'gsk_***');
+  s = s.replace(/ak_[A-Za-z0-9_-]{4,}/g, 'ak_***');
+  s = s.replace(/sk_[A-Za-z0-9_-]{4,}/g, 'sk_***');
+  s = s.replace(/pk_[A-Za-z0-9_-]{4,}/g, 'pk_***');
+  s = s.replace(/Bearer\s+[A-Za-z0-9._-]+/g, 'Bearer ***');
   const tower = String(process.env.TOWER_SYNC_TOKEN || '');
   if (tower.length >= 8) {
     s = s.split(tower).join('TOWER_***');
   }
+  ['COMPOSIO_API_KEY', 'BUFFER_API_KEY', 'GROQ_API_KEY'].forEach((k) => {
+    const v = String(process.env[k] || '');
+    if (v.length >= 6) s = s.split(v).join(k + '_***');
+  });
   return s;
+}
+
+/**
+ * Réponse brute (GraphQL/HTTP) pour le journal : secrets masqués puis TRONQUÉE
+ * à 2000 caractères (masquage AVANT troncature : jamais de secret tronqué).
+ */
+export function masquerReponseBrute(reponseBrute) {
+  if (!reponseBrute) return undefined;
+  return masquerSecrets(String(reponseBrute)).slice(0, 2000);
 }
 
 /**
