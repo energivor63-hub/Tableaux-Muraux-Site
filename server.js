@@ -1377,10 +1377,36 @@ app.post('/api/social/appliquer-limites', (req, res) => {
   }
 });
 
+// ═══ QUARANTAINE P0 audit 24/09 (G1) : garde-fou anti-doublon ATOMIQUE ═══
+// Map clé (produit + réseaux) -> promesse de fin d'exécution en cours.
+// Sérialise lecture-garde + envoi + journalisation : 2 publishes concurrents
+// du même contenu ne peuvent plus passer le garde-fou tous les deux
+// (preuves AUDIT-2026-09-24/preuves/bloc2.md §5 : 2/2 succès avant mutex).
+const VERROUS_PUBLICATION = new Map();
+function clePublicationDepuisBody(body, ciblesForcees) {
+  const b = body || {};
+  const plats = (Array.isArray(ciblesForcees) && ciblesForcees.length)
+    ? ciblesForcees
+    : (Array.isArray(b.plateformes) && b.plateformes.length ? b.plateformes : (b.platform ? [b.platform] : []));
+  const ids = [b.produitId, b.produitNom, nomProduitDepuisUrl(b.mediaUrl)]
+    .filter(Boolean).map((v) => String(v).toLowerCase()).sort().join('|');
+  return plats.map((p) => String(p).toLowerCase()).sort().join(',') + '§' + ids;
+}
+async function avecVerrouPublication(cle, fn) {
+  const precedent = VERROUS_PUBLICATION.get(cle) || Promise.resolve();
+  let liberer;
+  const actuel = new Promise((res) => { liberer = res; });
+  VERROUS_PUBLICATION.set(cle, actuel);
+  try { try { await precedent; } catch { /* prédécesseur en échec : on exécute quand même */ } return await fn(); }
+  finally { liberer(); if (VERROUS_PUBLICATION.get(cle) === actuel) VERROUS_PUBLICATION.delete(cle); }
+}
+
 // POST /api/social/publish — publication multi-réseaux DURCIE (Phase B)
 app.post('/api/social/publish', async (req, res) => {
   try {
-    const reponse = await executerPublication(req.body || {}, null);
+    const reponse = await avecVerrouPublication(
+      clePublicationDepuisBody(req.body || {}, null),
+      async () => executerPublication(req.body || {}, null));
     res.json(reponse);
   } catch (err) {
     res.json({ success: false, error: err.message });
@@ -1411,7 +1437,9 @@ app.post('/api/social/retry-failed', async (req, res) => {
     if (!reseaux || !reseaux.length) {
       return res.json({ success: false, error: 'Aucun réseau en échec à réessayer pour cette œuvre.' });
     }
-    const reponse = await executerPublication(body, reseaux);
+    const reponse = await avecVerrouPublication(
+      clePublicationDepuisBody(body, reseaux),
+      async () => executerPublication(body, reseaux));
     // Sécurité : un réseau publié avec succès sous 24 h n'est JAMAIS renvoyé,
     // même si le dashboard l'a inclus par erreur dans reseauxEchoues.
     const forcerRetry = body.forcer === true || body.forcerRepublication === true;
