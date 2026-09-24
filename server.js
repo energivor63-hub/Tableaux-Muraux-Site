@@ -57,13 +57,22 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000; // ajout : PORT surchargeable (instances de test)
 
-// CORS
+// CORS — P1 audit 24/09 (C1) : allowlist loopback explicite (usage 100 % local).
+// Le dashboard est servi same-origin par ce serveur ; file:// et sites tiers
+// ne reçoivent plus Access-Control-Allow-Origin (le dashboard affiche alors le
+// bandeau N3 « Serveur injoignable », jamais de panne silencieuse).
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  const origin = String(req.headers.origin || '');
+  const autorise = !origin
+    || origin === `http://localhost:${PORT}`
+    || origin === `http://127.0.0.1:${PORT}`;
+  if (autorise) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  }
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+    return res.sendStatus(autorise ? 200 : 403);
   }
   next();
 });
@@ -1918,7 +1927,10 @@ app.get('/', (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+// P1 audit 24/09 (C1) : écoute loopback UNIQUEMENT (usage 100 % local).
+// '0.0.0.0' exposait les routes destructrices (upload, restore, publish, sans
+// auth) à tout le LAN — voir preuves/bloc3.md §4. Surcharge possible via HOST.
+app.listen(PORT, process.env.HOST || '127.0.0.1', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 // 📱 SOCIAL STUDIO — intégrateur unique : Buffer GraphQL (3 réseaux)
 // NEUTRALISATION (19/09/2026) : l'ancien doublon de route /api/social/publish
