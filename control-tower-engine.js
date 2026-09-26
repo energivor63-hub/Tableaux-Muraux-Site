@@ -826,6 +826,77 @@ ambiance: "${champs.ambiance.replace(/"/g, '\\"')}"
 }
 
 /**
+ * Backup horodate de contenu.js avant insertion (mission 26/09).
+ * Convention existante : sauvegardes/backup_YYYY-MM-DD_HHhMMmSS_<motif>/.
+ */
+export function backupContenuAvantInsert(motif = 'pre-insert') {
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}h${p2(d.getMinutes())}m${p2(d.getSeconds())}s`;
+  const dir = path.join(ROOT_DIR, 'sauvegardes', `backup_${stamp}_${motif}`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(CONTENU_JS, path.join(dir, 'contenu.js'));
+  return dir;
+}
+
+/**
+ * Assertion anti-desync (mission 26/09) : pour tout rang r (position 1-based
+ * dans `produits: [`), le champ image: doit valoir `images/produit-r.<ext>`
+ * (suffixe ?v= tolere) ET le fichier correspondant doit exister sur disque.
+ * En cas d'ecart : Error listant les rangs fautifs (message actionnable).
+ */
+export function assertCatalogueAligne(contenuTexte, imagesDir = IMAGES_DIR) {
+  const sansBom = String(contenuTexte).replace(/^﻿/, '');
+  const m = sansBom.match(/produits\s*:\s*\[/);
+  if (!m) throw new Error('Assertion anti-desync : tableau `produits: [` introuvable.');
+  const debut = m.index + m[0].length;
+  const fiches = [];
+  let profondeur = 1, i = debut, blocDebut = -1, guillemet = null;
+  for (; i < sansBom.length; i++) {
+    const ch = sansBom[i];
+    if (guillemet) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === guillemet) guillemet = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { guillemet = ch; continue; }
+    if (ch === '[' || ch === '{') {
+      profondeur++;
+      if (ch === '{' && profondeur === 2 && blocDebut === -1) blocDebut = i;
+    } else if (ch === ']' || ch === '}') {
+      if (ch === '}' && profondeur === 2 && blocDebut !== -1) {
+        fiches.push(sansBom.slice(blocDebut, i + 1));
+        blocDebut = -1;
+      }
+      profondeur--;
+      if (profondeur === 0) break;
+    }
+  }
+  const fautifs = [];
+  const extOk = /^(jpg|jpeg|png|webp)$/i;
+  fiches.forEach((bloc, idx) => {
+    const rang = idx + 1;
+    const mi = bloc.match(/image:\s*"([^"]+)"/);
+    const champ = mi ? mi[1] : '(absent)';
+    const sansQuery = String(champ).split('?')[0];
+    const mf = sansQuery.match(/^images\/produit-(\d+)\.([A-Za-z0-9]+)$/);
+    const attendu = `images/produit-${rang}.<ext>`;
+    if (!mf || parseInt(mf[1], 10) !== rang || !extOk.test(mf[2])) {
+      fautifs.push(`rang ${rang} : champ=${champ} (attendu ${attendu})`);
+      return;
+    }
+    const fichier = path.join(imagesDir, `produit-${rang}.${mf[2]}`);
+    if (!fs.existsSync(fichier)) {
+      fautifs.push(`rang ${rang} : fichier manquant ${fichier} (champ=${champ})`);
+    }
+  });
+  if (fautifs.length > 0) {
+    throw new Error(`Assertion anti-desync ECHOUEE (${fautifs.length} rang(s)) : ` + fautifs.join(' ; '));
+  }
+  return { rangs: fiches.length, fautifs: 0 };
+}
+
+/**
  * ⚡ Moteur JavaScript de secours pour le décalage et l'insertion de produit
  */
 export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
@@ -881,19 +952,29 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
 
   productFiles.sort((a, b) => b.num - a.num);
 
+  // Backup prealable obligatoire (mission 26/09) : contenu.js avant toute ecriture.
+  const backupDir = backupContenuAvantInsert('pre-insert');
+  const renommages = []; // { from, to } — ordre descendant, rollback en sens inverse
+  let p1Ecrase = false;
+  let nomInsere = 'Nouveau Tableau'; // hisse hors du try (return en a besoin)
+  let cibleInseree = '';
   let shiftedCount = 0;
+  try {
   for (const item of productFiles) {
     const oldPath = path.join(IMAGES_DIR, item.fname);
     const newFname = `produit-${item.num + 1}.${item.ext}`;
     const newPath = path.join(IMAGES_DIR, newFname);
     fs.renameSync(oldPath, newPath);
+    renommages.push({ from: oldPath, to: newPath });
     shiftedCount++;
   }
 
   const sourceExt = path.extname(source).toLowerCase() || '.jpg';
   const targetP1 = path.join(IMAGES_DIR, `produit-1${sourceExt}`);
   fs.copyFileSync(source, targetP1);
+  p1Ecrase = true;
   const targetImageRel = `images/produit-1${sourceExt}`;
+  cibleInseree = targetImageRel;
 
   // Mettre à jour contenu.js
   if (!fs.existsSync(CONTENU_JS)) {
@@ -917,6 +998,7 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
   }
 
   const nom = data.nom || 'Nouveau Tableau';
+  nomInsere = nom;
   const desc = data.description || '';
   const cat = data.categorie || 'autres';
   const style = data.style || 'traditionnel';
@@ -942,9 +1024,31 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
 
   fs.writeFileSync(CONTENU_JS, content, 'utf-8');
 
+  // Assertion post-insertion (mission 26/09) : rang r = fiche r = image r,
+  // sinon abort + rollback + message actionnable. Ne pas desactiver.
+  assertCatalogueAligne(content, IMAGES_DIR);
+  } catch (err) {
+    // Rollback : supprimer la copie produit-1, inverser les renommages,
+    // restaurer contenu.js depuis le backup, puis echec explicite.
+    try { if (p1Ecrase) fs.unlinkSync(path.join(IMAGES_DIR, `produit-1${path.extname(source).toLowerCase() || '.jpg'}`)); } catch (e) {}
+    for (let k = renommages.length - 1; k >= 0; k--) {
+      try { fs.renameSync(renommages[k].to, renommages[k].from); } catch (e) {}
+    }
+    try { fs.copyFileSync(path.join(backupDir, 'contenu.js'), CONTENU_JS); } catch (e) {}
+    throw new Error(`[Anti-desync] Insertion ANNULEE + rollback (backup: ${backupDir}). Cause : ${err && err.message ? err.message : err}`);
+  }
+
+  // Cache-bust : le chemin insertion ne l'appelait pas (?v= perime le 26/09).
+  // Echec non bloquant (donnees deja verifiees par l'assertion).
+  try {
+    bumpCacheBust();
+  } catch (e) {
+    console.warn(`[Node Engine] bumpCacheBust ignore : ${e && e.message ? e.message : e}`);
+  }
+
   return {
     code: 0,
-    stdout: `[Node Engine] ✅ ${shiftedCount} images décalées avec succès.\n[Node Engine] ✅ Nouveau tableau « ${nom} » inséré en position n°1 dans contenu.js (${targetImageRel}).\n`,
+    stdout: `[Node Engine] ✅ ${shiftedCount} images décalées avec succès.\n[Node Engine] ✅ Nouveau tableau « ${nomInsere} » inséré en position n°1 dans contenu.js (${cibleInseree}).\n`,
     stderr: ''
   };
 }
@@ -966,9 +1070,9 @@ export function runPythonEngine() {
 
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
 
+    // DEP0190 : spawn SANS shell (args en tableau, pas d'interpreteur).
     const child = spawn(pythonCmd, [PYTHON_SCRIPT], {
       cwd: ROOT_DIR,
-      shell: true,
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
