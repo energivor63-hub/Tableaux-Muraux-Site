@@ -409,8 +409,9 @@ export function repairTruncatedJson(raw) {
  * mat, mont, fallback) réduit de moitié la taille de sortie pour rester sous
  * le plafond OTPM du tier gratuit Groq (max_tokens 950 vs limite 1000/min).
  * Les clés longues (description, categorie, ...) restent acceptées par
- * compatibilité. Prix et badge ne sont plus générés par l'IA (défauts moteur :
- * « À partir de 180 MAD » / « Nouveau ») sauf si le modèle en renvoie.
+ * compatibilité. Prix : TOUJOURS le plancher tarifs.json derive de la
+ * classification (matiere x montage x uni) — jamais 180 par defaut, jamais
+ * herite (mission MICRO 26/09). Badge : « Nouveau » sauf si le modèle en renvoie.
  */
 export function parseVisionChamps(parsed) {
   const normalizeTaxonomy = (val, allowed, defaultVal) => {
@@ -428,6 +429,10 @@ export function parseVisionChamps(parsed) {
   let materiauRecommande = 'Toile Canvas';
   if (matRaw.includes('bâche') || matRaw.includes('bache') || matRaw.includes('haute définition') || matRaw.includes('haute definition')) {
     materiauRecommande = 'bâche premium';
+  } else if (matRaw !== '' && !matRaw.includes('canvas') && !matRaw.includes('toile')) {
+    // Matiere explicite mais inconnue : echec fort (mission MICRO 26/09) —
+    // jamais de repli silencieux qui imiterait le rang 1 precedent.
+    throw new Error(`Matiere non reconnue pour le plancher tarifaire : « ${parsed.mat || parsed.materiauRecommande} » (attendu : bâche premium ou Toile Canvas).`);
   }
 
   const montRaw = String(parsed.mont || parsed.montageRecommande || '').toLowerCase();
@@ -441,8 +446,13 @@ export function parseVisionChamps(parsed) {
     ? rawCouleurs.slice(0, 5)
     : ['Beige', 'Doré', 'Noir'];
 
-  const rawPrix = parsed.px || parsed.prix;
   const rawBadge = parsed.bd || parsed.badge;
+
+  // Prix plancher tarifs.json (mission MICRO 26/09) : derive de la classification
+  // Groq (matiere x montage x panneaux uni par defaut). Le prix brut eventuel de
+  // l'IA (rawPrix) est IGNORE : il ne doit jamais imiter le rang 1 precedent.
+  // Matiere inconnue -> throw actionnable (ecaillage silencieux interdit).
+  const prix = libellePrixPlancher(prixPlancherTarifs(materiauRecommande, montageRecommande, 1));
 
   return {
     nom: parsed.nom || 'Calligraphie & Arabesques Dorées',
@@ -451,7 +461,7 @@ export function parseVisionChamps(parsed) {
     style,
     environnement,
     imageFallback: parsed.fallback || parsed.imageFallback || (categorie === 'calligraphie' ? '📜' : '🎨'),
-    prix: rawPrix || 'À partir de 180 MAD',
+    prix,
     badge: rawBadge !== undefined ? rawBadge : 'Nouveau',
     materiauRecommande,
     montageRecommande,
@@ -826,6 +836,63 @@ ambiance: "${champs.ambiance.replace(/"/g, '\\"')}"
 }
 
 /**
+ * Tarifs v7 -> prix plancher (mission MICRO 26/09).
+ * Miroir de registre/valider_reference.mjs : JAMAIS de montants codes en dur.
+ * Repere catalogue = Pin 40x50 (format minimum) ; triptyque = 3 x panneau.
+ * Normalisation : 'canvas' / 'bache' ; 'americain'/'flottant' -> flottant sinon tendu.
+ * Panneaux inconnu -> 1 (uni). Matiere inconnue -> throw actionnable (jamais de
+ * defaut silencieux qui imiterait le rang 1 precedent).
+ */
+export function lireTauxTarifs(tarifsPath = path.join(ROOT_DIR, 'tarifs.json')) {
+  if (!fs.existsSync(tarifsPath)) {
+    throw new Error(`Tarifs introuvables : ${tarifsPath} — prix plancher incalculable, insertion refusee.`);
+  }
+  const tarifs = JSON.parse(fs.readFileSync(tarifsPath, 'utf-8'));
+  if (tarifs.version !== 'v7') {
+    throw new Error(`tarifs.json : version « ${tarifs.version || '(absente)'} » inattendue, attendu v7.`);
+  }
+  const TMP = tarifs.taux_matieres_premieres || {};
+  for (const cle of ['bache_m2', 'canvas_m2', 'cadre_pin_ml']) {
+    if (typeof TMP[cle] !== 'number') {
+      throw new Error(`tarifs.json v7 : taux_matieres_premieres.${cle} manquant ou non numerique.`);
+    }
+  }
+  return TMP;
+}
+
+export function normaliserMatiereTarifs(label) {
+  const t = String(label || '').toLowerCase();
+  if (t.includes('canvas')) return 'canvas';
+  if (t.includes('bâche') || t.includes('bache')) return 'bache';
+  return null;
+}
+
+export function normaliserMontageTarifs(label) {
+  const t = String(label || '').toLowerCase();
+  return (t.includes('américain') || t.includes('americain') || t.includes('flottant')) ? 'flottant' : 'tendu';
+}
+
+export function prixPlancherTarifs(matiereLabel, montageLabel, panneaux = 1) {
+  const TMP = lireTauxTarifs();
+  const arrondi5 = (v) => Math.round(v / 5) * 5;
+  const matiere = normaliserMatiereTarifs(matiereLabel);
+  if (!matiere) {
+    throw new Error(`Matiere non reconnue pour le plancher tarifaire : « ${matiereLabel} » (attendu : bâche premium ou Toile Canvas).`);
+  }
+  const montage = normaliserMontageTarifs(montageLabel);
+  const s = 0.40 * 0.50, p = 2 * (0.40 + 0.50); // repere Pin 40x50
+  const tauxM2 = matiere === 'bache' ? TMP.bache_m2 : TMP.canvas_m2;
+  let base = arrondi5(s * tauxM2);
+  if (montage === 'flottant') base = arrondi5(s * tauxM2 + p * TMP.cadre_pin_ml);
+  if (Number(panneaux) >= 3) base = base * 3;
+  return base;
+}
+
+export function libellePrixPlancher(montant) {
+  return `À partir de ${montant} MAD`;
+}
+
+/**
  * Backup horodate de contenu.js avant insertion (mission 26/09).
  * Convention existante : sauvegardes/backup_YYYY-MM-DD_HHhMMmSS_<motif>/.
  */
@@ -1004,15 +1071,21 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
   const style = data.style || 'traditionnel';
   const env = data.environnement || 'salon';
   const fallback = data.imageFallback || '🎨';
-  const prix = data.prix || 'À partir de 180 MAD';
-  const badge = data.badge ? `"${data.badge}"` : 'null';
+  // Prix/matiere JAMAIS herites (mission MICRO 26/09) : la fiche peut porter le
+  // prix brut Groq (ex. 180 MAD, valeur de l'ancienne tete) — il est IGNORE et
+  // recalcule comme plancher tarifs.json depuis la classification (matiere x
+  // montage x panneaux uni par defaut). Matiere inconnue -> throw (rollback).
   const mat = data.materiauRecommande || 'Toile Canvas';
   const montage = data.montageRecommande || 'Cadre Américain';
+  const plancherInsert = prixPlancherTarifs(mat, montage, 1);
+  const prix = libellePrixPlancher(plancherInsert);
+  const panneauxInsert = 1; // defaut uni explicite (champ lu par valider_reference.mjs)
+  const badge = data.badge ? `"${data.badge}"` : 'null';
   const couleurs = Array.isArray(data.couleurs) ? data.couleurs : ['Beige', 'Doré', 'Noir'];
   const couleursStr = JSON.stringify(couleurs);
   const ambiance = data.ambiance || 'Chaleureuse et authentique';
 
-  const newBlock = `    {\n      nom: "${nom.replace(/"/g, '\\"')}",\n      description: "${desc.replace(/"/g, '\\"')}",\n      categorie: "${cat}",\n      style: "${style}",\n      environnement: "${env}",\n      image: "${targetImageRel}",\n      imageFallback: "${fallback}",\n      prix: "${prix}",\n      badge: ${badge},\n      materiauRecommande: "${mat}",\n      montageRecommande: "${montage}",\n      couleurs: ${couleursStr},\n      ambiance: "${ambiance.replace(/"/g, '\\"')}"\n    },`;
+  const newBlock = `    {\n      nom: "${nom.replace(/"/g, '\\"')}",\n      description: "${desc.replace(/"/g, '\\"')}",\n      categorie: "${cat}",\n      style: "${style}",\n      environnement: "${env}",\n      image: "${targetImageRel}",\n      imageFallback: "${fallback}",\n      prix: "${prix}",\n      badge: ${badge},\n      materiauRecommande: "${mat}",\n      montageRecommande: "${montage}",\n      panneaux: ${panneauxInsert},\n      couleurs: ${couleursStr},\n      ambiance: "${ambiance.replace(/"/g, '\\"')}"\n    },`;
 
   const match = content.match(/(produits\s*:\s*\[)/);
   if (!match) {
@@ -1027,6 +1100,17 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
   // Assertion post-insertion (mission 26/09) : rang r = fiche r = image r,
   // sinon abort + rollback + message actionnable. Ne pas desactiver.
   assertCatalogueAligne(content, IMAGES_DIR);
+  // Assertion prix/matiere (mission MICRO 26/09) : la fiche inseree porte le
+  // plancher tarifs.json, jamais le prix de l'ancienne tete.
+  {
+    const m1 = content.match(/produits\s*:\s*\[\s*\{([\s\S]*?)\n    \},/);
+    const bloc1 = m1 ? m1[1] : '';
+    const prixEcrit = (bloc1.match(/prix:\s*"([^"]+)"/) || [])[1] || '(absent)';
+    const prixAttendu = libellePrixPlancher(plancherInsert);
+    if (prixEcrit !== prixAttendu) {
+      throw new Error(`Assertion prix/matiere ECHOUEE rang 1 : ecrit « ${prixEcrit} » (attendu « ${prixAttendu} » = plancher ${mat} x ${montage} x uni).`);
+    }
+  }
   } catch (err) {
     // Rollback : supprimer la copie produit-1, inverser les renommages,
     // restaurer contenu.js depuis le backup, puis echec explicite.
