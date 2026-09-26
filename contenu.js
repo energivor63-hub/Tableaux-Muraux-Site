@@ -280,13 +280,13 @@ const CONTENU_SITE = {
       style: "traditionnel",
       environnement: "salon",
       image: "images/produit-2.jpg",
-      imageFallback: "📜",
-      prix: "À partir de 180 MAD",
+      imageFallback: "🎨",
+      prix: "À partir de 70 MAD",
       badge: "Nouveau",
-      materiauRecommande: "Toile Canvas",
+      materiauRecommande: "bâche premium",
       montageRecommande: "Châssis Bois",
-      couleurs: ["Beige","Crème","Doré","Noir"],
-      ambiance: "Spirituelle, noble et chaleureuse"
+      couleurs: ["Beige", "Crème", "Doré", "Noir"],
+      ambiance: "Spirituelle, noble et chaleureuse",
     },
     {
       nom: "Lumière Sacrée en Or",
