@@ -320,6 +320,7 @@ const CONTENU_SITE = {
       montageRecommande: "Châssis Bois",
       couleurs: ["Beige", "Crème", "Doré", "Noir"],
       ambiance: "Sacrée, majestueuse et apaisante",
+      panneaux: 1,
     },
     {
       nom: "Glorification Divine en Or et Beige",
@@ -335,6 +336,7 @@ const CONTENU_SITE = {
       montageRecommande: "Châssis Bois",
       couleurs: ["Beige", "Crème", "Doré", "Noir"],
       ambiance: "Spirituelle, noble et chaleureuse",
+      panneaux: 1,
     },
     {
       nom: "Lumière Sacrée en Or",
