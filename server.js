@@ -30,7 +30,8 @@ import {
   listBackups,
   restoreBackup,
   rewriteProductAtRank,
-  commitAndPushSite
+  commitAndPushSite,
+  definirVideoUrlFiche
 } from './control-tower-engine.js';
 // SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
 import { publierViaBufferGraphql, appliquerLimitePinterest500 } from './buffer-graphql.js';
@@ -1258,6 +1259,28 @@ async function executerPublication(body, ciblesForcees) {
     const reseauxEchoues = resultats.filter((r) => !r.succes).map((r) => r.reseau);
     const reseauxRefuses = refus.map((r) => r.reseau);
     const reseauxNonEnvoyes = [];
+
+    // MICRO-8 — URL vidéo liée à la FICHE : à l'envoi réussi, si l'URL collée
+    // diffère de fiche.videoUrl, la fiche est mise à jour (backup horodaté,
+    // recherche par nom exact — jamais par rang) + journal mode 'videoUrl-maj'.
+    // Jamais bloquant : toute erreur est loggée et ignorée (réponse inchangée).
+    let videoUrlMaj = null;
+    if (mediaType === 'video' && videoUrl && reseauxPublies.length && produitNom) {
+      try {
+        const ficheCourante = trouverFiche(produitNom).fiche;
+        const ancienneUrl = String((ficheCourante && ficheCourante.videoUrl) || '').trim();
+        if (ancienneUrl !== videoUrl) {
+          const resMaj = definirVideoUrlFiche({ nom: produitNom, videoUrl });
+          videoUrlMaj = { ancienne: resMaj.ancienne || null, nouvelle: videoUrl, backup: resMaj.backupDir || null };
+          journaliserIntegration({
+            type: 'videoUrl-maj', integrateur: 'local', reseau: reseauxPublies.join(', '),
+            produit, produitNom, statut: 'succes',
+            ancienneUrl: videoUrlMaj.ancienne, nouvelleUrl: videoUrl,
+            mode: 'videoUrl-maj'
+          });
+        }
+      } catch (e) { console.warn('[videoUrl-maj] mise à jour ignorée :', e.message); }
+    }
     const parReseau = {};
     resultats.forEach((r) => {
       parReseau[r.reseau] = { statut: r.succes ? 'succes' : 'echec', message: r.message, mode: r.mode || modeBuffer, fileAttente: !!r.fileAttente, dueAt: r.dueAt || null };
@@ -1287,7 +1310,8 @@ async function executerPublication(body, ciblesForcees) {
         refusDoublon: refus,
         resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
         parReseau, postUrls, variantes, textesEnvoyes,
-        produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente
+        produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente,
+        videoUrlMaj: videoUrlMaj || undefined
       };
     }
     return {
@@ -1299,7 +1323,8 @@ async function executerPublication(body, ciblesForcees) {
       refusDoublon: refus,
       resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
       parReseau, postUrls, variantes, textesEnvoyes,
-      produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente
+      produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente,
+      videoUrlMaj: videoUrlMaj || undefined
     };
 }
 

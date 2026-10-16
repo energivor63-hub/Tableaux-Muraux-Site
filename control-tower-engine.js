@@ -327,6 +327,9 @@ export function getCurrentCatalog() {
       const montageRecommande = getField('montageRecommande') || 'Cadre Américain';
       const couleurs = getField('couleurs') || ['Ocre', 'Bleu', 'Doré'];
       const ambiance = getField('ambiance') || 'Chaleureuse et authentique';
+      // MICRO-8 — URL vidéo publique liée à la FICHE (jamais au rang) :
+      // champ optionnel ('' si absent), renseigné depuis Internet Archive.
+      const videoUrl = getField('videoUrl') || '';
 
       items.push({
         rank,
@@ -336,6 +339,7 @@ export function getCurrentCatalog() {
         style,
         environnement,
         image,
+        videoUrl,
         prix,
         badge,
         materiauRecommande,
@@ -909,6 +913,73 @@ export function backupContenuAvantInsert(motif = 'pre-insert') {
   fs.mkdirSync(dir, { recursive: true });
   fs.copyFileSync(CONTENU_JS, path.join(dir, 'contenu.js'));
   return dir;
+}
+
+/**
+ * MICRO-8 — Définit fiche.videoUrl (URL publique Archive liée à la FICHE).
+ * Recherche la fiche par nom EXACT (jamais par rang — les rangs décalent) ;
+ * remplace la valeur existante ou insère après la ligne image:.
+ * Backup horodaté AVANT écriture (convention backup_*_videourl-maj).
+ * BOM initial et fins de ligne préservés (seul le bloc fiche est réécrit).
+ * @returns {{maj:boolean, ancienne:string, backupDir:string|null}} (maj=false si identique)
+ */
+export function definirVideoUrlFiche({ nom, videoUrl, contenuPath = CONTENU_JS, backupBase = BACKUPS_DIR } = {}) {
+  const cible = String(nom || '').trim();
+  const url = String(videoUrl || '').trim();
+  if (!cible) throw new Error('[videoUrl] nom de fiche manquant.');
+  if (!/^https:\/\//i.test(url)) throw new Error('[videoUrl] URL publique https requise.');
+  if (!contenuPath || !fs.existsSync(contenuPath)) throw new Error('[videoUrl] contenu.js introuvable.');
+  const raw = fs.readFileSync(contenuPath, 'utf8'); // BOM conservé (\uFEFF réécrit tel quel)
+  // Localise le tableau produits: puis chaque bloc {…} (guillemets respectés).
+  const m = raw.match(/produits\s*:\s*\[/);
+  if (!m) throw new Error('[videoUrl] tableau `produits: [` introuvable.');
+  const debut = m.index + m[0].length;
+  const blocs = [];
+  let profondeur = 1, i = debut, blocDebut = -1, guillemet = null;
+  for (; i < raw.length; i++) {
+    const ch = raw[i];
+    if (guillemet) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === guillemet) guillemet = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { guillemet = ch; continue; }
+    if (ch === '[' || ch === '{') {
+      profondeur++;
+      if (ch === '{' && profondeur === 2 && blocDebut === -1) blocDebut = i;
+    } else if (ch === ']' || ch === '}') {
+      if (ch === '}' && profondeur === 2 && blocDebut !== -1) {
+        blocs.push({ start: blocDebut, end: i + 1, text: raw.slice(blocDebut, i + 1) });
+        blocDebut = -1;
+      }
+      profondeur--;
+      if (profondeur === 0) break;
+    }
+  }
+  const parseNom = (bloc) => {
+    const r = bloc.match(/nom\s*:\s*(?:"((?:\\"|[^"])*)"|'((?:\\'|[^\'])*)')/);
+    return r ? (r[1] ?? r[2] ?? '') : null;
+  };
+  const trouve = blocs.find((b) => parseNom(b.text) === cible);
+  if (!trouve) throw new Error(`[videoUrl] fiche « ${cible} » introuvable (recherche par nom exact — jamais créée).`);
+  const ancienne = ((trouve.text.match(/videoUrl\s*:\s*"((?:\\"|[^"])*)"/) || [])[1] || '');
+  if (ancienne === url) return { maj: false, ancienne, backupDir: null };
+  const safeUrl = url.replace(/"/g, '\\"');
+  let blocMaj;
+  if (/videoUrl\s*:/.test(trouve.text)) {
+    blocMaj = trouve.text.replace(/(videoUrl\s*:\s*")((?:\\"|[^"])*)(")/, `$1${safeUrl}$3`);
+  } else {
+    if (!/image\s*:/.test(trouve.text)) throw new Error('[videoUrl] champ image introuvable dans la fiche.');
+    blocMaj = trouve.text.replace(/(image\s*:\s*"[^"]*"\s*,?)/, `$1\n      videoUrl: "${safeUrl}",`);
+  }
+  const d = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}h${p2(d.getMinutes())}m${p2(d.getSeconds())}s`;
+  const dir = path.join(backupBase, `backup_${stamp}_videourl-maj`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(contenuPath, path.join(dir, 'contenu.js'));
+  fs.writeFileSync(contenuPath, raw.slice(0, trouve.start) + blocMaj + raw.slice(trouve.end), 'utf8');
+  return { maj: true, ancienne, backupDir: dir };
 }
 
 /**
