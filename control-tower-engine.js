@@ -39,6 +39,11 @@ export const PYTHON_SCRIPT = path.join(ROOT_DIR, 'ajouter_produit_auto.py');
 
 export const IMAGES_DIR = path.join(SITE_DIR, 'images');
 export const CONTENU_JS = path.join(SITE_DIR, 'contenu.js');
+// 🎬 VIDÉOS LOCALES (dossier RACINE, hors dépôt Git — .gitignore) : les MP4
+// suivent la même numérotation produit-N que les images (mission vidéos 10/2026).
+export const VIDEOS_DIR = path.join(ROOT_DIR, 'videos');
+// 📝 Journal des décalages vidéo (hors repo — registre/journaux/ est .gitignore).
+export const VIDEO_SHIFTS_LOG = path.join(ROOT_DIR, 'registre', 'journaux', 'video-shifts.log');
 // 📄 Méta-données de la maquette en attente (nom d'origine déposé + mode détecté + analyse IA cachée)
 export const PENDING_META_FILE = path.join(IMAGES_DIR, '_pending-meta.json');
 // 🗂️ Staging des maquettes de remplacement : l'image vivante images/produit-N.* n'est JAMAIS
@@ -966,6 +971,58 @@ export function assertCatalogueAligne(contenuTexte, imagesDir = IMAGES_DIR) {
 /**
  * ⚡ Moteur JavaScript de secours pour le décalage et l'insertion de produit
  */
+
+/**
+ * 🎬 Décale les vidéos d'un rang (N → N+1) lors d'une insertion en tête.
+ * Miroir du shift images : itération N décroissant (aucun écrasement),
+ * casse normalisée en minuscule (Produit-N.mp4 → produit-N+1.mp4).
+ * Dossier absent, non-dossier ou vide → no-op (retour shifted:0, JAMAIS d'erreur).
+ * Seuls les fichiers produit-N.mp4 sont décalés ; les variantes
+ * produit-N-reel.mp4 (si un jour créées) sont volontairement ignorées
+ * (scope mission vidéos 10/2026 — les reels se gèrent par montage dédié).
+ * Chaque déplacement est journalisé (append) dans video-shifts.log.
+ * @returns {{shifted:number, moves:Array<{from:string,to:string}>, noop:boolean}}
+ */
+export function decalerVideosInsert(videosDir = VIDEOS_DIR, logFile = VIDEO_SHIFTS_LOG) {
+  const vide = { shifted: 0, moves: [], noop: true };
+  if (!videosDir || !fs.existsSync(videosDir)) return vide;
+  let stat = null;
+  try { stat = fs.statSync(videosDir); } catch (e) { return vide; }
+  if (!stat.isDirectory()) return vide;
+  const pattern = /^produit-(\d+)\.mp4$/i;
+  const items = [];
+  for (const fname of fs.readdirSync(videosDir)) {
+    const m = fname.match(pattern);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      if (num >= 1) items.push({ num, fname });
+    }
+  }
+  if (items.length === 0) return vide;
+  // Garde-fou : deux fichiers pour le même rang (ex. Produit-5.mp4 + produit-5.mp4)
+  // s'écraseraient mutuellement → abort AVANT tout renommage.
+  const nums = items.map(i => i.num);
+  if (new Set(nums).size !== nums.length) {
+    const doublons = nums.filter((n, i) => nums.indexOf(n) !== i);
+    throw new Error(`[Vidéos] Doublons de rang détectés (${[...new Set(doublons)].join(', ')}) — décalage annulé, AUCUN fichier touché.`);
+  }
+  items.sort((a, b) => b.num - a.num); // décroissant : la cible N+1 est toujours libre
+  const moves = [];
+  for (const item of items) {
+    const newFname = `produit-${item.num + 1}.mp4`;
+    fs.renameSync(path.join(videosDir, item.fname), path.join(videosDir, newFname));
+    moves.push({ from: item.fname, to: newFname });
+  }
+  try {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] shift insert : ` + moves.map(m => `${m.from} → ${m.to}`).join(' ; ') + '\n', 'utf8');
+  } catch (e) { /* journal non bloquant */ }
+  return { shifted: moves.length, moves, noop: false };
+}
+
+/**
+ * ⚡ Moteur JavaScript de secours pour le décalage et l'insertion de produit
+ */
 export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
   if (!fs.existsSync(fichePath)) {
     throw new Error(`Fiche produit introuvable : ${fichePath}`);
@@ -1026,6 +1083,8 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
   let nomInsere = 'Nouveau Tableau'; // hisse hors du try (return en a besoin)
   let cibleInseree = '';
   let shiftedCount = 0;
+  let shiftedVideosCount = 0;
+  const videoRenommages = []; // { from, to } absolus — rollback en sens inverse
   try {
   for (const item of productFiles) {
     const oldPath = path.join(IMAGES_DIR, item.fname);
@@ -1034,6 +1093,15 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
     fs.renameSync(oldPath, newPath);
     renommages.push({ from: oldPath, to: newPath });
     shiftedCount++;
+  }
+
+  // 🎬 Cause racine (mission vidéos 10/2026) : les vidéos suivent le même
+  // décalage que les images. Dossier absent/vide → no-op. Échec → throw
+  // (rollback global ci-dessous, vidéos incluses).
+  const resVideos = decalerVideosInsert();
+  shiftedVideosCount = resVideos.shifted;
+  for (const m of resVideos.moves) {
+    videoRenommages.push({ from: path.join(VIDEOS_DIR, m.from), to: path.join(VIDEOS_DIR, m.to) });
   }
 
   const sourceExt = path.extname(source).toLowerCase() || '.jpg';
@@ -1112,9 +1180,12 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
     }
   }
   } catch (err) {
-    // Rollback : supprimer la copie produit-1, inverser les renommages,
-    // restaurer contenu.js depuis le backup, puis echec explicite.
+    // Rollback : supprimer la copie produit-1, inverser les renommages
+    // (vidéos puis images), restaurer contenu.js depuis le backup, puis echec explicite.
     try { if (p1Ecrase) fs.unlinkSync(path.join(IMAGES_DIR, `produit-1${path.extname(source).toLowerCase() || '.jpg'}`)); } catch (e) {}
+    for (let k = videoRenommages.length - 1; k >= 0; k--) {
+      try { fs.renameSync(videoRenommages[k].to, videoRenommages[k].from); } catch (e) {}
+    }
     for (let k = renommages.length - 1; k >= 0; k--) {
       try { fs.renameSync(renommages[k].to, renommages[k].from); } catch (e) {}
     }
@@ -1132,7 +1203,7 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
 
   return {
     code: 0,
-    stdout: `[Node Engine] ✅ ${shiftedCount} images décalées avec succès.\n[Node Engine] ✅ Nouveau tableau « ${nomInsere} » inséré en position n°1 dans contenu.js (${cibleInseree}).\n`,
+    stdout: `[Node Engine] ✅ ${shiftedCount} images décalées avec succès.\n[Node Engine] 🎬 ${shiftedVideosCount} vidéos décalées avec succès.\n[Node Engine] ✅ Nouveau tableau « ${nomInsere} » inséré en position n°1 dans contenu.js (${cibleInseree}).\n`,
     stderr: ''
   };
 }
