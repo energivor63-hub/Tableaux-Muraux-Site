@@ -81,6 +81,21 @@ const SITE_CONFIG = {
     },
 
     // ========================================
+    // MICRO-7 — AUTO-ROUTAGE TYPE DE MÉDIA → JOURS DE PUBLICATION
+    // Buffer gratuit = queue FIFO SANS filtre natif par type : les images
+    // remplissent les créneaux du canal (mar-ven 19:30, réglés dans Buffer),
+    // les vidéos basculent vers la voie programmée sam/dim/lun à HEURE
+    // via le planificateur local (POST /api/social/schedule).
+    // Jours : 0=dimanche … 6=samedi. HEURE : heure locale du FUSEAU.
+    // ========================================
+    routageMedia: {
+        joursImages: [2, 3, 4, 5],      // mar-ven → file d'attente Buffer (créneaux canal)
+        joursVideos: [6, 0, 1],         // sam-dim-lun → voie programmée (planificateur local)
+        heure: "19:30",                 // heure locale du fuseau ci-dessous
+        fuseau: "Africa/Casablanca"     // fuseau de l'atelier (IANA)
+    },
+
+    // ========================================
     // SECTION HERO
     // ========================================
     hero: {

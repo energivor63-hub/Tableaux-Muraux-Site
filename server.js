@@ -1933,9 +1933,12 @@ app.get('/dashboard.html', (req, res) => {
 app.use('/dashboard', express.static(path.join(ROOT_DIR, 'dashboard')));
 
 // POST /api/social/schedule — Programmation
+// MICRO-7 : accepte et persiste `mode` (ex. 'auto-routage-video' pour les
+// vidéos reroutées depuis la file) + `mediaType`/`videoUrl`, renvoyés dans
+// la réponse. Programmation manuelle : mode absent → 'manuel' (jamais surchargé).
 app.post('/api/social/schedule', async (req, res) => {
   try {
-    const { platform, content, mediaUrl, scheduleDate } = req.body;
+    const { platform, content, mediaUrl, scheduleDate, mode, mediaType, videoUrl } = req.body;
     const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
     let journal = [];
     if (fs.existsSync(journalPath)) {
@@ -1947,12 +1950,15 @@ app.post('/api/social/schedule', async (req, res) => {
       platform,
       content,
       mediaUrl,
+      mediaType: mediaType || 'image',
+      ...(videoUrl ? { videoUrl } : {}),
+      mode: mode || 'manuel',
       status: 'scheduled',
       scheduleDate
     });
     fs.mkdirSync(path.join(ROOT_DIR, 'journaux'), { recursive: true });
     fs.writeFileSync(journalPath, JSON.stringify(journal, null, 2), 'utf-8');
-    res.json({ success: true, message: 'Programmé avec succès' });
+    res.json({ success: true, message: 'Programmé avec succès', mode: mode || 'manuel', scheduleDate });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
