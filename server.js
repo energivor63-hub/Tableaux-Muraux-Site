@@ -34,7 +34,7 @@ import {
   definirVideoUrlFiche
 } from './control-tower-engine.js';
 // SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
-import { publierViaBufferGraphql, appliquerLimitePinterest500 } from './buffer-graphql.js';
+import { publierViaBufferGraphql, appliquerLimitePinterest500, lireCanaux, requeteGraphQL } from './buffer-graphql.js';
 // 🛡️ Phase B — variantes par réseau + hash anti-doublon (légendes distinctes IG/FB/PIN)
 // 🎯 Session 2026-09-18 — qualité rédactionnelle : hashtags Instagram
 // dédoublonnés (Set ordonné, plafond 11) + CTA « lien en bio », adjectifs
@@ -996,13 +996,16 @@ async function executerPublication(body, ciblesForcees) {
     const forcer = body.forcer === true || body.forcerRepublication === true;
     // ROUTAGE MODE (bouton « 📬 File d'attente Buffer ») : 'queue' → Buffer
     // mode addToQueue + schedulingType automatic (prochain créneau du canal,
-    // heure renvoyée dans post.dueAt) ; défaut 'now' → shareNow (inchangé).
+    // heure renvoyée dans post.dueAt) ; 'schedule' → customScheduled + dueAt
+    // explicite (ISO 8601 UTC) = programmation CLOUD réelle (PC éteint OK) ;
+    // défaut 'now' → shareNow (inchangé).
     // AUCUNE limite de volume côté serveur : l'utilisateur choisit
     // canaux/volumes, la limite 10/canal est gérée côté Buffer (ses erreurs
     // remontent telles quelles, message + code).
-    const modePublication = body.modePublication === 'queue' ? 'queue' : 'now';
-    const modeBuffer = modePublication === 'queue' ? 'addToQueue' : 'shareNow';
-    const fileAttente = modePublication === 'queue';
+    const modePublication = body.modePublication === 'queue' ? 'queue' : (body.modePublication === 'schedule' ? 'schedule' : 'now');
+    const modeBuffer = modePublication === 'queue' ? 'addToQueue' : (modePublication === 'schedule' ? 'customScheduled' : 'shareNow');
+    const fileAttente = modePublication === 'queue' || modePublication === 'schedule';
+    const scheduledAt = modePublication === 'schedule' ? body.scheduledAt : null;
 
     // 1 ─ Fiche produit + variantes DISTINCTES par réseau
     const critere = body.produitId || body.produitNom || nomProduitDepuisUrl(mediaUrlDemande) || null;
@@ -1140,21 +1143,28 @@ async function executerPublication(body, ciblesForcees) {
           outcome = await publierViaBufferGraphql({
             reseau: platform, texte, mediaUrl,
             lien: copie.link || '', alt: copie.alt || '', titrePin: copie.title || '',
-            modePublication, mediaType, videoUrl
+            modePublication, mediaType, videoUrl,
+            scheduledAt, useStableUrl: fileAttente
           });
         } catch (bufErr) {
           erreurBuf = bufErr;
         }
         // 📓 journal intégrations (garde-fou 24 h + traçabilité) : intégrateur
         // 'buffer', champs inchangés (statut, cause, secrets masqués) + channelIds
-        journaliserIntegration({
+        const integratorMode = fileAttente
+            ? (modePublication === 'schedule' ? 'buffer-cloud-schedule' : 'buffer-queue')
+            : 'buffer-graphql';
+          const journalMode = outcome ? (outcome.mode || modeBuffer) : modeBuffer;
+          journaliserIntegration({
           type: 'publication', integrateur: 'buffer', reseau: LABEL_RESEAU[platform],
           produit, produitNom,
           statut: outcome ? 'succes' : 'echec',
           httpStatus: outcome ? 200 : ((erreurBuf && erreurBuf.httpStatus) || null),
           message: outcome
             ? (fileAttente
-              ? `Ajouté à la file Buffer (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode addToQueue${outcome.dueAt ? `, envoi prévu : ${outcome.dueAt}` : ''})`
+              ? (modePublication === 'schedule'
+                ? `Programmé via Buffer Cloud (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode customScheduled, envoi : ${outcome.scheduledAt || outcome.dueAt})`
+                : `Ajouté à la file Buffer (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode addToQueue${outcome.dueAt ? `, envoi prévu : ${outcome.dueAt}` : ''})`)
               : `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode ${outcome.mode || modeBuffer})`)
             : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
           cause: outcome ? null : (erreurBuf && erreurBuf.message) || 'Erreur Buffer inconnue',
@@ -1167,9 +1177,10 @@ async function executerPublication(body, ciblesForcees) {
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
             : undefined,
-          mode: (outcome && outcome.mode) || modeBuffer,
+          mode: journalMode,
+          integratorMode,
           fileAttente,
-          dueAtRetour: (outcome && outcome.dueAt) || null,
+          dueAtRetour: (outcome && (outcome.dueAt || outcome.scheduledAt)) || null,
           board: outcome && outcome.board
             ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url }
             : undefined,
@@ -1185,12 +1196,15 @@ async function executerPublication(body, ciblesForcees) {
             reseau: platform, integrateur: 'buffer', succes: true,
             action: 'createPost', httpStatus: 200,
             message: fileAttente
-              ? `Ajouté à la file Buffer (${LABEL_RESEAU[platform]}) — post ${outcome.postId}${outcome.dueAt ? ` — envoi prévu : ${outcome.dueAt}` : ''}`
+              ? (modePublication === 'schedule'
+                ? `Programmé via Buffer Cloud (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode customScheduled, envoi : ${outcome.scheduledAt || outcome.dueAt})`
+                : `Ajouté à la file Buffer (${LABEL_RESEAU[platform]}) — post ${outcome.postId}${outcome.dueAt ? ` — envoi prévu : ${outcome.dueAt}` : ''}`)
               : `Publié via Buffer GraphQL (${LABEL_RESEAU[platform]}) — post ${outcome.postId}`,
             postId: outcome.postId,
             mode: outcome.mode || modeBuffer,
             fileAttente,
             dueAt: outcome.dueAt || null,
+            scheduledAt: outcome.scheduledAt || null,
             reponseBrute: masquerReponseBrute(outcome.reponseBrute),
             board: outcome.board || undefined
           });
@@ -1205,7 +1219,12 @@ async function executerPublication(body, ciblesForcees) {
             reponseBrute: masquerReponseBrute(erreurBuf && erreurBuf.reponseBrute)
           });
         }
-        journal.unshift({
+        const sjMode = fileAttente
+            ? (modePublication === 'schedule' ? 'buffer-cloud-schedule' : 'buffer-queue')
+            : 'buffer-graphql';
+          const sjStatus = outcome ? (fileAttente ? 'scheduled' : 'published') : 'error';
+          const sjDueAt = outcome ? (outcome.scheduledAt || outcome.dueAt) : (scheduledAt || null);
+          journal.unshift({
           id: `${fileAttente ? 'queue' : 'pub'}_${Date.now()}_${platform}`,
           date: new Date().toISOString(),
           platform,
@@ -1213,12 +1232,12 @@ async function executerPublication(body, ciblesForcees) {
           mediaUrl,
           videoUrl: videoUrl || undefined,
           mediaType,
-          status: outcome ? 'published' : 'error',
-          scheduleDate,
+          status: sjStatus,
+          scheduleDate: sjDueAt,
           integrateur: 'buffer',
-          mode: (outcome && outcome.mode) || modeBuffer,
+          mode: sjMode,
           fileAttente,
-          dueAt: (outcome && outcome.dueAt) || null,
+          dueAt: sjDueAt,
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
             : undefined,
@@ -1563,25 +1582,258 @@ app.get('/api/social/variantes', (req, res) => {
   }
 });
 
-// Programmation d'une publication
-app.post('/api/social/schedule', (req, res) => {
+// Programmation d'une publication — PROGRAMMATION BUFFER CLOUD RÉELLE (MICRO-11)
+app.post('/api/social/schedule', async (req, res) => {
   try {
-    const { platform, content, mediaUrl, scheduleDate } = req.body;
-    let journal = [];
-    if (fs.existsSync(SOCIAL_JOURNAL_PATH)) {
-      journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    const { platform, content, mediaUrl, scheduleDate, produitId, produitNom, copies, alt, title, link } = req.body;
+
+    // Validation : date requise, plateforme unique, mediaUrl requise
+    if (!platform || !['facebook', 'instagram', 'pinterest'].includes(platform)) {
+      return res.json({ success: false, error: 'Plateforme invalide ou manquante (facebook, instagram, pinterest)' });
     }
-    journal.unshift({
-      id: `sched_${Date.now()}`,
+    if (!scheduleDate) {
+      return res.json({ success: false, error: 'Date/heure de programmation requise (scheduleDate ISO 8601)' });
+    }
+    if (!mediaUrl) {
+      return res.json({ success: false, error: 'mediaUrl requise pour la programmation' });
+    }
+
+    // Résoudre le produit (via produitId, produitNom, ou mediaUrl)
+    const critere = produitId || produitNom || nomProduitDepuisUrl(mediaUrl) || null;
+    const { fiche } = trouverFiche(critere);
+    const produitNomFinal = fiche?.nom || produitNom || nomProduitDepuisUrl(mediaUrl) || 'Œuvre inconnue';
+    const produitCles = [...new Set([produitId, produitNom, nomProduitDepuisUrl(mediaUrl), fiche?.nom, fiche && nomProduitDepuisUrl(fiche?.image), critere].filter(Boolean).map(String))];
+
+    // Vérifier média public AVANT envoi (même logique que /api/social/publish)
+    const mediaType = req.body.mediaType || 'image';
+    let finalMediaUrl = mediaUrl;
+    let finalVideoUrl = null;
+    if (mediaType === 'video') {
+      const verifVideo = await verifierVideoPublique(mediaUrl);
+      if (!verifVideo.ok) {
+        return res.json({ success: false, error: verifVideo.erreur });
+      }
+      finalVideoUrl = verifVideo.url;
+    } else {
+      const verifMedia = await verifierMediaPublic(mediaUrl, fiche);
+      if (!verifMedia.ok) {
+        return res.json({ success: false, error: verifMedia.erreur });
+      }
+      finalMediaUrl = verifMedia.url;
+    }
+
+    // Garde-fou anti-doublon 24h (même logique)
+    const forcer = req.body.forcer === true;
+    const etat = verifierAntiDoublon(produitCles, platform, forcer);
+    if (etat.bloque) {
+      return res.json({ success: false, error: etat.message, refusDoublon: true, heures: etat.heures });
+    }
+
+    // Appel Buffer GraphQL avec mode 'schedule' + dueAt explicite + URL stable
+    const outcome = await publierViaBufferGraphql({
+      reseau: platform,
+      texte: content,
+      mediaUrl: finalMediaUrl,
+      altText: alt || '',
+      titrePin: title || '',
+      lien: link || '',
+      modePublication: 'schedule',
+      mediaType,
+      videoUrl: finalVideoUrl,
+      scheduledAt: scheduleDate,
+      useStableUrl: true
+    });
+
+    // Journal intégrations (traçabilité complète)
+    const LABEL_RESEAU = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest' };
+    journaliserIntegration({
+      type: 'publication', integrateur: 'buffer', reseau: LABEL_RESEAU[platform],
+      produit: produitCles[0] || 'inconnu', produitNom: produitNomFinal,
+      statut: 'succes', httpStatus: 200,
+      message: `Programmé via Buffer Cloud (${LABEL_RESEAU[platform]}) — post ${outcome.postId} (mode customScheduled, envoi : ${outcome.scheduledAt || outcome.dueAt})`,
+      cause: null, code: undefined,
+      reponseBrute: masquerReponseBrute(outcome.reponseBrute),
+      mediaUrl: finalMediaUrl, videoUrl: finalVideoUrl || undefined, mediaType,
+      hashContenu: hashContenu(content), contenu: content,
+      channelIds: outcome.channelId ? [outcome.channelId] : undefined,
+      mode: outcome.mode || 'customScheduled',
+      integratorMode: 'buffer-cloud-schedule',
+      fileAttente: true,
+      dueAtRetour: outcome.scheduledAt || outcome.dueAt || null,
+      board: outcome.board ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url } : undefined,
+      scheduledAt: outcome.scheduledAt || outcome.dueAt || null
+    });
+
+    // Journal social (dashboard)
+    const SOCIAL_JOURNAL_PATH = path.join(ROOT_DIR, 'dashboard', 'journaux', 'social-journal.json');
+    let sj = [];
+    if (fs.existsSync(SOCIAL_JOURNAL_PATH)) {
+      sj = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    }
+    sj.unshift({
+      id: `queue_${Date.now()}_${platform}`,
       date: new Date().toISOString(),
       platform,
       content,
-      mediaUrl,
+      mediaUrl: finalMediaUrl,
+      videoUrl: finalVideoUrl || undefined,
+      mediaType,
       status: 'scheduled',
-      scheduleDate
+      scheduleDate: outcome.scheduledAt || outcome.dueAt || scheduleDate,
+      integrateur: 'buffer',
+      mode: 'buffer-cloud-schedule',
+      fileAttente: true,
+      dueAt: outcome.scheduledAt || outcome.dueAt || null,
+      channelIds: outcome.channelId ? [outcome.channelId] : undefined,
+      board: outcome.board ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url } : undefined
     });
-    fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
-    res.json({ success: true, message: 'Programmé avec succès' });
+    fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(sj, null, 2), 'utf-8');
+
+    res.json({
+      success: true,
+      message: `Programmé via Buffer Cloud — envoi prévu le ${new Date(outcome.scheduledAt || outcome.dueAt || scheduleDate).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`,
+      postId: outcome.postId,
+      dueAt: outcome.scheduledAt || outcome.dueAt,
+      mode: 'buffer-cloud-schedule'
+    });
+  } catch (err) {
+    // Erreur Buffer (quota, auth, etc.) → renvoyer message clair
+    res.json({ success: false, error: err.message || 'Erreur lors de la programmation Buffer' });
+  }
+});
+
+// 📬 // ?? INVENTAIRE FILE BUFFER (MICRO-11) : lecture seule GraphQL des posts
+// programm?s / en file par canal. Renvoie : id, date, titre, mediaUrl, canal,
+// statut + badge "INCONNU" si absent des journaux locaux (fant?me).
+app.get('/api/social/buffer-queue', async (req, res) => {
+  try {
+    const canaux = await lireCanaux();
+    const resultats = [];
+
+    // Query GraphQL Relay : posts(input:{organizationId}) ? edges.node
+    // L'API Buffer ne filtre pas par channelIds/statuses dans PostsInput.
+    // On r?cup?re TOUS les posts de l'organisation et on filtre c?t? serveur.
+    const QUERY_POSTS_QUEUE = `
+      query GetPosts($input: PostsInput!) {
+        posts(input: $input) {
+          edges {
+            node {
+              id
+              text
+              status
+              dueAt
+              channel { id name service }
+              assets { source }
+            }
+          }
+        }
+      }
+    `;
+
+    const orgId = process.env.BUFFER_ORGANIZATION_ID;
+    if (!orgId) {
+      return res.json({ success: false, error: 'BUFFER_ORGANIZATION_ID manquant' });
+    }
+
+    try {
+      const { data, reponseBrute } = await requeteGraphQL({
+        query: QUERY_POSTS_QUEUE,
+        variables: { input: { organizationId: orgId } }
+      });
+      const edges = (data && data.posts && data.posts.edges) ? data.posts.edges : [];
+
+      // Filtrer les posts par canal connu et statut scheduled/queued
+      const canauxById = {};
+      for (const [reseau, channelId] of Object.entries(canaux)) {
+        if (channelId) canauxById[channelId] = reseau;
+      }
+
+      for (const edge of edges) {
+        const post = edge?.node;
+        if (!post) continue;
+        const channelId = post.channel?.id;
+        const reseau = canauxById[channelId];
+        if (!reseau) continue; // canal non g?r? (ex. Twitter, LinkedIn)
+        if (post.status !== 'scheduled' && post.status !== 'queued') continue;
+
+        resultats.push({
+          postId: post.id,
+          reseau,
+          channelId,
+          channelName: post.channel?.name,
+          channelService: post.channel?.service,
+          texte: post.text?.slice(0, 120),
+          statut: post.status,
+          dueAt: post.dueAt,
+          mediaUrl: post.assets?.[0]?.source || null,
+          reponseBrute: masquerSecrets(reponseBrute)
+        });
+      }
+    } catch (e) {
+      resultats.push({
+        reseau: 'all',
+        erreur: e.message,
+        reponseBrute: masquerSecrets(e.reponseBrute)
+      });
+    }
+
+    // Croisement avec journaux locaux pour d?tecter les fant?mes
+    const JOURNAL_INT_PATH = path.join(ROOT_DIR, 'journal_integrations.json');
+    const JOURNAL_SOC_PATH = path.join(ROOT_DIR, 'dashboard', 'journaux', 'social-journal.json');
+    const postIdsLocaux = new Set();
+    [JOURNAL_INT_PATH, JOURNAL_SOC_PATH].forEach(p => {
+      if (fs.existsSync(p)) {
+        try {
+          const j = JSON.parse(fs.readFileSync(p, 'utf-8'));
+          j.forEach(e => {
+            if (e.postId) postIdsLocaux.add(e.postId);
+            if (e.id && e.id.startsWith('queue_')) postIdsLocaux.add(e.id);
+          });
+        } catch {}
+      }
+    });
+
+    resultats.forEach(r => {
+      r.inconnu = !postIdsLocaux.has(r.postId) && !postIdsLocaux.has(`queue_${r.postId}`);
+    });
+
+    res.json({ success: true, posts: resultats });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 📅 PROCHAINS CRÉNEAUX PAR CANAL (MICRO-11) : simule un addToQueue
+// pour chaque plateforme demandée et renvoie le dueAt prévu.
+// Si scheduledAt fourni → mode customScheduled (date choisie).
+// Sinon → mode addToQueue (prochain créneau auto du canal).
+app.post('/api/social/buffer-next-slots', async (req, res) => {
+  try {
+    const { platforms, scheduledAt } = req.body;
+    if (!Array.isArray(platforms) || !platforms.length) {
+      return res.json({ success: false, error: 'Platforms array requis' });
+    }
+    const canaux = await lireCanaux();
+    const slots = {};
+
+    for (const p of platforms) {
+      const channelId = canaux[p];
+      if (!channelId) {
+        slots[p] = { erreur: `Canal ${p} non configuré` };
+        continue;
+      }
+      if (scheduledAt) {
+        // Mode customScheduled : la date est imposée par l'utilisateur
+        slots[p] = { mode: 'customScheduled', dueAt: scheduledAt };
+      } else {
+        // Mode addToQueue : simuler via un createPost "dry-run" n'est pas possible
+        // sans envoyer vraiment. On renvoie une estimation basée sur l'heure actuelle
+        // et la règle du canal (Buffer gère sa file interne).
+        // Pour l'affichage prévisionnel, on indique que Buffer choisira.
+        slots[p] = { mode: 'addToQueue', dueAt: null, note: 'Buffer attribue le prochain créneau libre du canal' };
+      }
+    }
+    res.json({ success: true, slots });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -1941,143 +2193,13 @@ app.get('/', (req, res) => {
 // '0.0.0.0' exposait les routes destructrices (upload, restore, publish, sans
 // auth) à tout le LAN — voir preuves/bloc3.md §4. Surcharge possible via HOST.
 app.listen(PORT, process.env.HOST || '127.0.0.1', () => {
-  // ═══════════════════════════════════════════════════════════════════════════
-// 📱 SOCIAL STUDIO — intégrateur unique : Buffer GraphQL (3 réseaux)
-// NEUTRALISATION (19/09/2026) : l'ancien doublon de route /api/social/publish
-// (code mort — non routé, jamais atteint : la route réelle est définie plus
-// haut) est SUPPRIMÉ. Seuls la desserte du dashboard et ses assets subsistent.
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Servir le dashboard depuis la racine (hors Git)
-app.get('/dashboard.html', (req, res) => {
-  const dashboardPath = path.join(ROOT_DIR, 'dashboard', 'dashboard.html');
-  res.sendFile(dashboardPath);
-});
-
-// Servir les assets du dashboard
-app.use('/dashboard', express.static(path.join(ROOT_DIR, 'dashboard')));
-
-// POST /api/social/schedule — Programmation
-// MICRO-7 : accepte et persiste `mode` (ex. 'auto-routage-video' pour les
-// vidéos reroutées depuis la file) + `mediaType`/`videoUrl`, renvoyés dans
-// la réponse. Programmation manuelle : mode absent → 'manuel' (jamais surchargé).
-app.post('/api/social/schedule', async (req, res) => {
-  try {
-    const { platform, content, mediaUrl, scheduleDate, mode, mediaType, videoUrl } = req.body;
-    const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
-    let journal = [];
-    if (fs.existsSync(journalPath)) {
-      journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
-    }
-    journal.unshift({
-      id: `sched_${Date.now()}`,
-      date: new Date().toISOString(),
-      platform,
-      content,
-      mediaUrl,
-      mediaType: mediaType || 'image',
-      ...(videoUrl ? { videoUrl } : {}),
-      mode: mode || 'manuel',
-      status: 'scheduled',
-      scheduleDate
-    });
-    fs.mkdirSync(path.join(ROOT_DIR, 'journaux'), { recursive: true });
-    fs.writeFileSync(journalPath, JSON.stringify(journal, null, 2), 'utf-8');
-    res.json({ success: true, message: 'Programmé avec succès', mode: mode || 'manuel', scheduleDate });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
-
-// GET /api/social/journal — Historique
-app.get('/api/social/journal', (req, res) => {
-  try {
-    const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
-    if (!fs.existsSync(journalPath)) {
-      return res.json({ success: true, journal: [] });
-    }
-    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
-    res.json({ success: true, journal });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
-
-// GET /api/social/stats — Statistiques
-app.get('/api/social/stats', (req, res) => {
-  try {
-    const journalPath = path.join(ROOT_DIR, 'journaux', 'social-journal.json');
-    if (!fs.existsSync(journalPath)) {
-      return res.json({ success: true, stats: { facebook: 0, instagram: 0, pinterest: 0 } });
-    }
-    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8'));
-    const stats = { facebook: 0, instagram: 0, pinterest: 0 };
-    journal.forEach(entry => {
-      if (stats[entry.platform] !== undefined) {
-        stats[entry.platform]++;
-      }
-    });
-    res.json({ success: true, stats });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
-
-// GET, POST, DELETE /api/social/drafts — Brouillons
-const draftsPath = path.join(ROOT_DIR, 'journaux', 'social-drafts.json');
-
-app.get('/api/social/drafts', (req, res) => {
-  try {
-    if (!fs.existsSync(draftsPath)) {
-      return res.json({ success: true, drafts: [] });
-    }
-    const drafts = JSON.parse(fs.readFileSync(draftsPath, 'utf-8'));
-    res.json({ success: true, drafts });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
-
-app.post('/api/social/drafts', (req, res) => {
-  try {
-    let drafts = [];
-    if (fs.existsSync(draftsPath)) {
-      drafts = JSON.parse(fs.readFileSync(draftsPath, 'utf-8'));
-    }
-    const draft = {
-      id: `draft_${Date.now()}`,
-      ...req.body,
-      createdAt: new Date().toISOString()
-    };
-    drafts.unshift(draft);
-    fs.mkdirSync(path.join(ROOT_DIR, 'journaux'), { recursive: true });
-    fs.writeFileSync(draftsPath, JSON.stringify(drafts, null, 2), 'utf-8');
-    res.json({ success: true, draft });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
-
-app.delete('/api/social/drafts/:id', (req, res) => {
-  try {
-    if (!fs.existsSync(draftsPath)) {
-      return res.json({ success: false, error: 'Aucun brouillon' });
-    }
-    let drafts = JSON.parse(fs.readFileSync(draftsPath, 'utf-8'));
-    drafts = drafts.filter(d => d.id !== req.params.id);
-    fs.writeFileSync(draftsPath, JSON.stringify(drafts, null, 2), 'utf-8');
-    res.json({ success: true });
-  } catch (err) {
-    res.json({ success: false, error: err.message });
-  }
-});
   console.log(`\n================================================================`);
-  console.log(`🚀 SERVEUR TABLEAUX MURAUX DÉMARRÉ SUR http://localhost:${PORT}`);
-  console.log(`🗼 INTERFACE SERVIE : ${TOUR_HTML_FILE}`);
-  console.log(`📁 RACINE DU PROJET : ${ROOT_DIR}`);
-  console.log(`📁 SOUS-DOSSIER SITE: ${SITE_DIR}`);
-  console.log(`📁 DOSSIER IMAGES   : ${IMAGES_DIR}`);
-  console.log(`🔑 FICHIER .ENV     : ${ROOT_ENV_FILE} (${hasApiKeyConfigured() ? 'CONFIGURÉE ✅' : 'NON DÉFINIE ❌ (Ajoutez GROQ_API_KEY dans .env)'})`);
-  console.log(`🐍 SCRIPT PYTHON    : ${PYTHON_SCRIPT} (${fs.existsSync(PYTHON_SCRIPT) ? 'TROUVÉ ✅' : 'NON TROUVÉ ❌'})`);
+  console.log(`?? SERVEUR TABLEAUX MURAUX D?MARR? SUR http://localhost:${PORT}`);
+  console.log(`?? INTERFACE SERVIE : ${TOUR_HTML_FILE}`);
+  console.log(`?? RACINE DU PROJET : ${ROOT_DIR}`);
+  console.log(`?? SOUS-DOSSIER SITE: ${SITE_DIR}`);
+  console.log(`?? DOSSIER IMAGES   : ${IMAGES_DIR}`);
+  console.log(`?? FICHIER .ENV     : ${ROOT_ENV_FILE} (${hasApiKeyConfigured() ? 'CONFIGUR?E ?' : 'NON D?FINIE ? (Ajoutez GROQ_API_KEY dans .env)'})`);
+  console.log(`?? SCRIPT PYTHON    : ${PYTHON_SCRIPT} (${fs.existsSync(PYTHON_SCRIPT) ? 'TROUV? ?' : 'NON TROUV? ?'})`);
   console.log(`================================================================\n`);
 });

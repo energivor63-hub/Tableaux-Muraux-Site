@@ -263,29 +263,80 @@ const MUTATION_CREATE_POST = `
  * la variante d'erreur ; l'ancien code concluait « succès » à tort).
  * Renvoie { postId, status, dueAt, channel, channelId, reponseBrute }.
  */
-export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', mediaType = 'image', videoUrl = '', env = process.env } = {}) {
-  // ROUTAGE MODE (sonde live 2026-09-21 : ShareMode = addToQueue |
-  // customScheduled | shareNext | shareNow ; SchedulingType = automatic |
-  // notification) — 'now' → shareNow (immédiat) ; 'queue' → addToQueue +
-  // schedulingType automatic (Buffer affecte le prochain créneau du canal,
-  // heure renvoyée dans post.dueAt). AUCUNE limite de volume ici (10/canal
-  // gérée côté Buffer ; ses erreurs remontent telles quelles).
-  const mode = modePublication === 'queue' ? 'addToQueue' : 'shareNow';
+export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, env = process.env } = {}) {
+  // ROUTAGE MODE (introspection live 2026-09-17 + 2026-10-21) :
+  // ShareMode = addToQueue | customScheduled | shareNext | shareNow
+  // SchedulingType = automatic | notification
+  // - 'now' → shareNow (immédiat)
+  // - 'queue' → addToQueue + schedulingType automatic (Buffer choisit le créneau, dueAt renvoyé)
+  // - 'schedule' → customScheduled + dueAt explicite (ISO 8601 UTC) + schedulingType automatic
+  //   => programmation CLOUD réelle (PC éteint OK), pas de faux succès local.
+  let mode;
+  let schedulingType = 'automatic';
+  let dueAt = null;
+  if (modePublication === 'queue') {
+    mode = 'addToQueue';
+  } else if (modePublication === 'schedule' && scheduledAt) {
+    mode = 'customScheduled';
+    dueAt = scheduledAt; // ISO 8601 UTC, ex: "2026-10-25T14:30:00.000Z"
+  } else {
+    mode = 'shareNow';
+  }
+
   // 🎬 VIDÉO (sonde live 2026-09-22) : AssetInput { document | image | video } ;
   // VideoAssetInput { url: NON_NULL String!, thumbnailUrl, metadata:
   // VideoMetadataInput { thumbnailOffset, title } }. Si vidéo → assets =
   // [{ video: { url } }] (url PUBLIQUE https, vérifiée côté server.js —
   // JAMAIS localhost). L'alt text (ImageMetadataInput) ne s'applique qu'aux images.
   const enVideo = mediaType === 'video';
+
+  // URL STABLE pour posts programmés/mis en file (MICRO-11) :
+  // Les images de rang (images/produit-N.jpg) sont décalées à chaque ajout.
+  // Les URLs stables (images/stables/<slug-oeuvre>.jpg) NE bougent JAMAIS.
+  // Si useStableUrl=true et mediaUrl est une URL de rang, on la résout via stable-map.json.
+  let finalMediaUrl = mediaUrl;
+  if (useStableUrl && !enVideo && mediaUrl && !mediaUrl.includes('/stables/')) {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const ROOT_DIR = path.resolve(__dirname, '..');
+      const MAPPING_FILE = path.join(ROOT_DIR, 'registre', 'stable-map.json');
+      if (fs.existsSync(MAPPING_FILE)) {
+        const mapping = JSON.parse(fs.readFileSync(MAPPING_FILE, 'utf-8'));
+        // Chercher par rang actuel (produit-N) ou par slug si déjà stable
+        const relKey = mediaUrl.startsWith('images/') ? mediaUrl : ('images/' + path.basename(mediaUrl).split('?')[0]);
+        if (mapping[relKey]) {
+          finalMediaUrl = mapping[relKey];
+        } else {
+          // Fallback : essayer de déduire le slug depuis le nom de fichier
+          const basename = path.basename(mediaUrl).split('?')[0].replace(/\.(jpg|jpeg|png|webp)$/i, '');
+          const stableKey = 'stable:' + basename;
+          if (mapping[stableKey]) finalMediaUrl = mapping[stableKey];
+        }
+      }
+    } catch (e) {
+      console.warn('[Buffer] Résolution URL stable échouée, utilisation URL originale:', e.message);
+    }
+  }
+  // Construire URL absolue GitHub Pages si chemin relatif
+  if (!enVideo && finalMediaUrl && !finalMediaUrl.startsWith('http')) {
+    const PUBLIC_BASE = String(env.WEBSITE_URL || 'https://energivor63-hub.github.io/Tableaux-Muraux-Site/').replace(/\/+$/, '');
+    finalMediaUrl = finalMediaUrl.startsWith('/') ? PUBLIC_BASE + finalMediaUrl : PUBLIC_BASE + '/' + finalMediaUrl;
+  }
+
   const input = {
     channelId, // NON_NULL ChannelId — SINGULIER (introspection 2026-09-17)
     text: texte || '',
-    schedulingType: 'automatic', // NON_NULL SchedulingType — ENUM automatic|notification
-    mode,                        // NON_NULL ShareMode — shareNow (immédiat) | addToQueue (file d'attente)
+    schedulingType, // NON_NULL SchedulingType — ENUM automatic|notification
+    mode,                        // NON_NULL ShareMode — shareNow | addToQueue | customScheduled
     needsApproval: false,        // NON_NULL Boolean — publication directe, sans file d'approbation
     aiAssisted: true,            // disclosure IA (CreatePostInput.aiAssisted — SESSION 13)
-    assets: enVideo ? [{ video: { url: videoUrl } }] : [{ image: { url: mediaUrl } }]
+    assets: enVideo ? [{ video: { url: videoUrl } }] : [{ image: { url: finalMediaUrl } }]
   };
+  if (dueAt) input.dueAt = dueAt; // customScheduled uniquement
   if (altText && !enVideo) input.assets[0].image.metadata = { altText }; // ImageMetadataInput.altText
   if (reseau === 'pinterest' && board) {
     input.metadata = { pinterest: { boardServiceId: board.serviceId } };
@@ -400,13 +451,19 @@ export function appliquerLimitePinterest500(texte) {
  *   1. canal = override .env SINON channels(input:{organizationId}) (cache 10 min) ;
  *   2. Pinterest : board officiel OBLIGATOIRE résolu via channel(input:) →
  *      PinterestMetadata.boards (site-web/buffer-pinterest.js, SESSION 10) ;
- *   3. mutation createPost (mode shareNow|addToQueue selon modePublication)
+ *   3. mutation createPost :
+ *      - mode 'now'       → shareNow (immédiat)
+ *      - mode 'queue'     → addToQueue (file Buffer, créneau auto, dueAt renvoyé)
+ *      - mode 'schedule'  → customScheduled + dueAt explicite (ISO 8601 UTC)
+ *         => programmation CLOUD réelle (PC éteint OK)
  *      avec la variante du réseau ; média image (assets image) OU vidéo
  *      (assets video, URL publique vérifiée côté server.js).
- * Renvoie { postId, status, dueAt, channelId, channel, board, mode } — lève
+ *   4. URL STABLE (MICRO-11) : si useStableUrl=true, résolution via stable-map.json
+ *      pour éviter les vignettes corrompues par le décalage des rangs.
+ * Renvoie { postId, status, dueAt, channelId, channel, board, mode, scheduledAt } — lève
  * BufferGraphqlError (message + code) que server.js journalise.
  */
-export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', mediaType = 'image', videoUrl = '', env = process.env } = {}) {
+export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, env = process.env } = {}) {
   if (!SERVICE_ATTENDU[reseau]) throw new BufferGraphqlError(`Réseau non routé vers Buffer : ${reseau}`);
   const canalId = await resoudreCanalReseau({ reseau, env });
   let board = null;
@@ -424,9 +481,10 @@ export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, ti
     limitePin = appliquerLimitePinterest500(texte);
     texte = limitePin.texte;
   }
-  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, mediaType, videoUrl, env });
+  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, mediaType, videoUrl, scheduledAt, useStableUrl, env });
   return {
-    ...outcome, board, mode: outcome.mode || (modePublication === 'queue' ? 'addToQueue' : 'shareNow'),
+    ...outcome, board, mode: outcome.mode || (modePublication === 'queue' ? 'addToQueue' : modePublication === 'schedule' ? 'customScheduled' : 'shareNow'),
+    scheduledAt: outcome.dueAt || scheduledAt,
     ...(limitePin && limitePin.tronque
       ? { tronque: true, totalAvant: limitePin.totalAvant, totalApres: limitePin.totalApres }
       : {})
