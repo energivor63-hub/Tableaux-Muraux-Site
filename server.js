@@ -35,6 +35,9 @@ import {
 } from './control-tower-engine.js';
 // SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
 import { publierViaBufferGraphql, appliquerLimitePinterest500, lireCanaux, requeteGraphQL } from './buffer-graphql.js';
+// 🖼️ MICRO-11v2-ter — médias stables : résolution DYNAMIQUE à l'envoi +
+// resynchronisation (hooks ajout/remplacement/édition). Jamais de carte périmée.
+import { resynchroniserStables, resumeResync } from './medias-stables.js';
 // 🛡️ Phase B — variantes par réseau + hash anti-doublon (légendes distinctes IG/FB/PIN)
 // 🎯 Session 2026-09-18 — qualité rédactionnelle : hashtags Instagram
 // dédoublonnés (Set ordonné, plafond 11) + CTA « lien en bio », adjectifs
@@ -80,6 +83,35 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+/**
+ * Hook MICRO-11v2-ter : resynchronise stable-map.json + les copies
+ * images/stables/* depuis contenu.js COURANT, juste APRÈS toute opération qui
+ * change le catalogue (ajout en tête, remplacement, édition de nom).
+ * Objectif : aucun envoi Buffer ne peut plus utiliser une carte périmée —
+ * même si l'opérateur enchaîne « ajout → envoi » sans étape manuelle.
+ * Ne touche ni contenu.js ni les journaux ; n'échoue jamais l'opération
+ * métier (retourne { erreur } et laisse le garde-fou SHA bloquer l'envoi).
+ */
+function resyncMediasStablesApres(changement) {
+  try {
+    const resume = resumeResync(resynchroniserStables());
+    if (resume.crees || resume.actualises || resume.erreurs.length) {
+      console.log(
+        `[medias-stables] resync (${changement}) : ${resume.crees} créé(s), ` +
+        `${resume.actualises} actualisé(s), ${resume.inchanges} inchangé(s), ` +
+        `${resume.orphelins.length} orphelin(s), ${resume.erreurs.length} erreur(s).`
+      );
+    }
+    if (resume.crees || resume.actualises) {
+      resume.message = `Médias stables resynchronisés (${resume.crees} créé(s), ${resume.actualises} actualisé(s)) — commit + push site-web requis avant tout envoi Buffer pour que les URLs soient servies par GitHub Pages.`;
+    }
+    return resume;
+  } catch (e) {
+    console.error(`[medias-stables] resync (${changement}) ÉCHEC :`, e.message);
+    return { erreur: e.message };
+  }
+}
 
 // Configuration Multer pour enregistrer la maquette sous images/produit-0.ext
 const storage = multer.diskStorage({
@@ -244,7 +276,10 @@ app.delete('/api/control-tower/clear-mockup', (req, res) => {
 app.post('/api/control-tower/trigger-integration', async (req, res) => {
   try {
     const result = await executeAutoIntegration();
-    res.type('application/json').json(result);
+    // Hook MICRO-11v2-ter : l'insertion en tête décale TOUS les rangs →
+    // resync immédiate (carte + copies stables) avant tout envoi possible.
+    const mediasStables = resyncMediasStablesApres('ajout produit');
+    res.type('application/json').json({ ...result, mediasStables });
   } catch (err) {
     console.error('Erreur intégration automatique:', err);
     res.status(400).type('application/json').json({
@@ -454,7 +489,10 @@ app.post('/api/control-tower/trigger-replacement', async (req, res) => {
       return res.status(400).type('application/json').json({ success: false, error: 'productRank manquant dans la requête.' });
     }
     const result = await executeReplacement(Number(productRank), typeof prix === 'string' ? prix : undefined, champs);
-    res.type('application/json').json(result);
+    // Hook MICRO-11v2-ter : l'image de CE rang change → la copie stable du
+    // slug doit être actualisée (SHA) avant tout envoi.
+    const mediasStables = resyncMediasStablesApres(`remplacement produit-${productRank}`);
+    res.type('application/json').json({ ...result, mediasStables });
   } catch (err) {
     console.error('Erreur déclenchement remplacement:', err);
     res.status(400).type('application/json').json({ success: false, error: err.message, messageClair: err.message });
@@ -520,6 +558,10 @@ app.post('/api/control-tower/update-product', async (req, res) => {
 
     // 2. Écriture contenu.js SANS décalage (BOM + CRLF préservés, image du rang inchangée)
     rewriteProductAtRank(rank, champs, undefined);
+    // 2bis. Hook MICRO-11v2-ter : si le NOM change, le slug change → nouvelle
+    // copie stable + carte reconstruite AVANT tout envoi (l'image, elle, est
+    // inchangée : les autres copies restent identiques).
+    const mediasStables = resyncMediasStablesApres(`édition produit-${rank}`);
     // 3. Journal des Intégrations : « ÉDITION produit-N : ancien prix → nouveau prix »
     const entry = {
       type: 'EDITION',
@@ -564,6 +606,7 @@ app.post('/api/control-tower/update-product', async (req, res) => {
       nouveauPrix: entry.nouveauPrix,
       backupFolder: relativeBackup,
       commit: commitResult,
+      mediasStables,
       messageClair: `Fiche du produit-${rank} éditée : prix « ${entry.ancienPrix} » → « ${entry.nouveauPrix} ». Image inchangée (pour l'image : remplacement produit-${rank}). Sauvegarde : ${relativeBackup}.`
     });
   } catch (err) {
@@ -1144,7 +1187,7 @@ async function executerPublication(body, ciblesForcees) {
             reseau: platform, texte, mediaUrl,
             lien: copie.link || '', alt: copie.alt || '', titrePin: copie.title || '',
             modePublication, mediaType, videoUrl,
-            scheduledAt, useStableUrl: fileAttente
+            scheduledAt, useStableUrl: fileAttente, produitNom
           });
         } catch (bufErr) {
           erreurBuf = bufErr;
@@ -1173,6 +1216,10 @@ async function executerPublication(body, ciblesForcees) {
           // errors[]) tronquée 2000 car., secrets masqués.
           reponseBrute: masquerReponseBrute((outcome && outcome.reponseBrute) || (erreurBuf && erreurBuf.reponseBrute)),
           mediaUrl, videoUrl: videoUrl || undefined, mediaType,
+          mediaUrlEnvoyee: outcome ? (outcome.mediaUrl || null) : null,
+          mediaStable: (outcome && outcome.mediaStable)
+            ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
+            : (erreurBuf && erreurBuf.mediaStable ? erreurBuf.mediaStable : undefined),
           hashContenu: hashContenu(texte), contenu: texte,
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
@@ -1206,7 +1253,11 @@ async function executerPublication(body, ciblesForcees) {
             dueAt: outcome.dueAt || null,
             scheduledAt: outcome.scheduledAt || null,
             reponseBrute: masquerReponseBrute(outcome.reponseBrute),
-            board: outcome.board || undefined
+            board: outcome.board || undefined,
+            mediaUrlEnvoyee: outcome.mediaUrl || null,
+            mediaStable: outcome.mediaStable
+              ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
+              : undefined
           });
         } else {
           const message = `Buffer GraphQL (${LABEL_RESEAU[platform]}) : ${(erreurBuf && erreurBuf.message) || 'Erreur inconnue'}`;
@@ -1216,6 +1267,7 @@ async function executerPublication(body, ciblesForcees) {
             action: 'createPost', message,
             cause: (erreurBuf && erreurBuf.message) || null,
             code: erreurBuf && erreurBuf.code ? erreurBuf.code : undefined,
+            mediaStable: erreurBuf && erreurBuf.mediaStable ? erreurBuf.mediaStable : undefined,
             reponseBrute: masquerReponseBrute(erreurBuf && erreurBuf.reponseBrute)
           });
         }
@@ -1594,6 +1646,17 @@ app.post('/api/social/schedule', async (req, res) => {
     if (!scheduleDate) {
       return res.json({ success: false, error: 'Date/heure de programmation requise (scheduleDate ISO 8601)' });
     }
+    // Buffer `dueAt` = DateTime : on n'accepte qu'un INSTANT valide. Une date
+    // sans fuseau (« 2026-10-27T14:30 ») serait interprétée en UTC ou refusée →
+    // normalisation ISO explicite + refus des dates passées.
+    const dateProg = new Date(scheduleDate);
+    if (Number.isNaN(dateProg.getTime())) {
+      return res.json({ success: false, error: `Date de programmation invalide : « ${scheduleDate} » (ISO 8601 attendu).` });
+    }
+    if (dateProg.getTime() <= Date.now() + 60 * 1000) {
+      return res.json({ success: false, error: 'La date de programmation doit être dans le futur (au moins +1 minute).' });
+    }
+    const scheduledAtIso = dateProg.toISOString();
     if (!mediaUrl) {
       return res.json({ success: false, error: 'mediaUrl requise pour la programmation' });
     }
@@ -1630,18 +1693,20 @@ app.post('/api/social/schedule', async (req, res) => {
     }
 
     // Appel Buffer GraphQL avec mode 'schedule' + dueAt explicite + URL stable
+    // (résolution DYNAMIQUE depuis contenu.js courant, produitNom = identité fiable)
     const outcome = await publierViaBufferGraphql({
       reseau: platform,
       texte: content,
       mediaUrl: finalMediaUrl,
-      altText: alt || '',
+      alt: alt || '',
       titrePin: title || '',
       lien: link || '',
       modePublication: 'schedule',
       mediaType,
       videoUrl: finalVideoUrl,
-      scheduledAt: scheduleDate,
-      useStableUrl: true
+      scheduledAt: scheduledAtIso,
+      useStableUrl: mediaType !== 'video',
+      produitNom: produitNomFinal
     });
 
     // Journal intégrations (traçabilité complète)
@@ -1676,10 +1741,15 @@ app.post('/api/social/schedule', async (req, res) => {
       platform,
       content,
       mediaUrl: finalMediaUrl,
+      // Média réellement envoyé (URL stable) + preuve SHA (MICRO-11v2-ter)
+      mediaUrlEnvoyee: outcome.mediaUrl || null,
+      mediaStable: outcome.mediaStable
+        ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
+        : undefined,
       videoUrl: finalVideoUrl || undefined,
       mediaType,
       status: 'scheduled',
-      scheduleDate: outcome.scheduledAt || outcome.dueAt || scheduleDate,
+      scheduleDate: outcome.scheduledAt || outcome.dueAt || scheduledAtIso,
       integrateur: 'buffer',
       mode: 'buffer-cloud-schedule',
       fileAttente: true,
@@ -1691,14 +1761,24 @@ app.post('/api/social/schedule', async (req, res) => {
 
     res.json({
       success: true,
-      message: `Programmé via Buffer Cloud — envoi prévu le ${new Date(outcome.scheduledAt || outcome.dueAt || scheduleDate).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`,
+      message: `Programmé via Buffer Cloud — envoi prévu le ${new Date(outcome.scheduledAt || outcome.dueAt || scheduledAtIso).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`,
       postId: outcome.postId,
       dueAt: outcome.scheduledAt || outcome.dueAt,
-      mode: 'buffer-cloud-schedule'
+      mode: 'buffer-cloud-schedule',
+      mediaUrlEnvoyee: outcome.mediaUrl || null,
+      mediaStable: outcome.mediaStable
+        ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
+        : undefined
     });
   } catch (err) {
-    // Erreur Buffer (quota, auth, etc.) → renvoyer message clair
-    res.json({ success: false, error: err.message || 'Erreur lors de la programmation Buffer' });
+    // Erreur Buffer (quota, auth, etc.) OU garde-fou média stable → message
+    // clair + code machine (MEDIA_STABLE_DESYNC / _ABSENT / _RANG_INCONNU…).
+    res.json({
+      success: false,
+      error: err.message || 'Erreur lors de la programmation Buffer',
+      code: err && err.code ? err.code : undefined,
+      mediaStable: err && err.mediaStable ? err.mediaStable : undefined
+    });
   }
 });
 
@@ -2051,99 +2131,23 @@ app.get('/api/control-tower/sync-prix/preview', async (req, res) => {
   }
 });
 
-// POST /run — (a) tarifs → HTML, (b) contenu.js --apply. Backups avant chaque
-// étape ; échec (a) → rollback HTML + (b) non lancé ; échec (b) → rollback contenu.js.
+// POST /run — DÉSACTIVÉ (quarantaine D2, audit 24/09) : répond 423 AVANT tout
+// backup/écriture. Aucun `--apply` (ni synchro_tarifs_unifie, ni
+// synchro_contenu_images) ne peut plus être déclenché par cette route ; le
+// legacy a été supprimé. Réactivation = mission dédiée (offsets).
 app.post('/api/control-tower/sync-prix/run', async (req, res) => {
   if (!gardeSynchro(req, res)) return;
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const dirRun = path.join(SYNC_BACKUP_DIR, stamp);
-  const backups = [];
-  const rel = (p) => path.relative(ROOT_DIR, p).replace(/\\/g, '/');
-  let backupHtml = null;
-  let backupContenu = null;
-  try {
-    fs.mkdirSync(dirRun, { recursive: true });
-
-    // ── Backup AVANT l'étape (a) ──
-    if (fs.existsSync(SYNC_HTML_UNIFIE)) {
-      backupHtml = path.join(dirRun, 'Registre-Tarifs-2026-09-14-Unifie.html');
-      fs.copyFileSync(SYNC_HTML_UNIFIE, backupHtml);
-      backups.push(rel(backupHtml));
-    }
-
-    // ── ÉTAPE (a) : synchro_tarifs_unifie.mjs ──
-    const rTarifs = await spawnNode(SYNC_TARIFS_SCRIPT, [], null);
-    const logsTarifs = ['[run] ▶ ÉTAPE a — synchro_tarifs_unifie.mjs'].concat(rTarifs.logs);
-    if (rTarifs.code !== 0) {
-      const lignes = logsTarifs.concat(['[run] ❌ ÉTAPE a échouée (code ' + rTarifs.code + ') — rollback HTML']);
-      if (backupHtml) {
-        fs.copyFileSync(backupHtml, SYNC_HTML_UNIFIE);
-        lignes.push('[run] ↩ HTML restauré depuis ' + rel(backupHtml));
-      }
-      lignes.push('[run] ⛔ ÉTAPE b NON lancée (abort propre)');
-      journaliserSynchro({ date: new Date().toISOString(), ok: false, etape: 'tarifs', backups, logs: lignes.slice(-120) });
-      return reponseMasquee(res, 200, {
-        ok: false,
-        etape: 'tarifs',
-        code: rTarifs.code,
-        backups,
-        logs: lignes,
-        restaure: backupHtml ? rel(backupHtml) : null,
-        message: 'Échec étape tarifs : HTML restauré, contenu.js non touché.'
-      });
-    }
-    const logsApresTarifs = logsTarifs.concat(['[run] ✔ ÉTAPE a terminée']);
-
-    // ── Backup AVANT l'étape (b) ──
-    if (fs.existsSync(SYNC_CONTENU_JS)) {
-      backupContenu = path.join(dirRun, 'contenu.js');
-      fs.copyFileSync(SYNC_CONTENU_JS, backupContenu);
-      backups.push(rel(backupContenu));
-    }
-
-    // ── ÉTAPE (b) : synchro_contenu_images.mjs --apply ──
-    const rContenu = await spawnNode(SYNC_CONTENU_SCRIPT, ['--apply'], null);
-    const logsContenu = logsApresTarifs
-      .concat(['[run] ▶ ÉTAPE b — synchro_contenu_images.mjs --apply'])
-      .concat(rContenu.logs);
-    if (rContenu.code !== 0) {
-      const lignes = logsContenu.concat(['[run] ❌ ÉTAPE b échouée (code ' + rContenu.code + ') — rollback contenu.js']);
-      if (backupContenu) {
-        fs.copyFileSync(backupContenu, SYNC_CONTENU_JS);
-        lignes.push('[run] ↩ contenu.js restauré depuis ' + rel(backupContenu));
-      }
-      journaliserSynchro({ date: new Date().toISOString(), ok: false, etape: 'contenu', backups, logs: lignes.slice(-120) });
-      return reponseMasquee(res, 200, {
-        ok: false,
-        etape: 'contenu',
-        code: rContenu.code,
-        backups,
-        logs: lignes,
-        restaure: backupContenu ? rel(backupContenu) : null,
-        message: 'Échec étape contenu : contenu.js restauré (le HTML tarifs reste à jour).'
-      });
-    }
-
-    const lignesFin = logsContenu.concat(['[run] ✔ ÉTAPE b terminée', '[run] ✅ Synchro complète (tarifs → HTML → contenu.js)']);
-    journaliserSynchro({ date: new Date().toISOString(), ok: true, etape: 'complete', backups, logs: lignesFin.slice(-120) });
-    return reponseMasquee(res, 200, {
-      ok: true,
-      etape: 'complete',
-      backups,
-      logs: lignesFin,
-      message: 'Prix synchronisés : tarifs.json → registre HTML + contenu.js.'
-    });
-  } catch (err) {
-    journaliserSynchro({ date: new Date().toISOString(), ok: false, etape: 'exception', backups, logs: ['[run] ⚠ ' + masquerSecrets(err.message)] });
-    return reponseMasquee(res, 500, { ok: false, etape: 'exception', error: masquerSecrets(err.message), backups });
-  }
+  // D2 (MICRO-11) : quarantaine MAINTENUE. Refus AVANT tout backup/écriture :
+  // l'étape (a) ne doit pas modifier le registre HTML, et (b) n'exécute jamais
+  // `--apply`. La levée se fera dans une mission dédiée (offsets).
+  return res.status(423).json({
+    ok: false,
+    quarantaine: true,
+    code: 'SYNCHRO_PRIX_QUARANTAINE',
+    etape: 'refus',
+    message: 'Désactivé — synchro en quarantaine audit 24/09, offsets à corriger en mission dédiée. Aucun --apply exécuté.'
+  });
 });
-
-// ==========================================
-// 🌐 SERVICE DE L'INTERFACE & FICHIERS STATIQUES
-// ==========================================
-
-// 1. Service direct et explicite de tour-de-controle.html DEPUIS LA RACINE (PARENT)
 app.get('/tour-de-controle.html', (req, res) => {
   if (fs.existsSync(TOUR_HTML_FILE)) {
     res.sendFile(TOUR_HTML_FILE);

@@ -71,6 +71,7 @@
 
 import { resolvePinterestBoard } from './buffer-pinterest.js';
 import { coupePropre, plafonnerTitrePinterest } from './social-variants.js';
+import { resoudreMediaStable, MediaStableError } from './medias-stables.js';
 
 const BUFFER_GRAPHQL_BASE = String(process.env.BUFFER_GRAPHQL_BASE || 'https://api.buffer.com').replace(/\/+$/, '');
 const BUFFER_GRAPHQL_URL = BUFFER_GRAPHQL_BASE + '/graphql';
@@ -91,13 +92,14 @@ let canauxCache = null; // { map: {facebook: id, instagram: id, pinterest: id}, 
  * + reponseBrute : variante/réponse brute TRONQUÉE à 2000 caractères pour le
  * journal — secrets masqués côté server.js avant écriture). */
 export class BufferGraphqlError extends Error {
-  constructor(message, { code, httpStatus, channelId, reponseBrute } = {}) {
+  constructor(message, { code, httpStatus, channelId, reponseBrute, mediaStable } = {}) {
     super(message);
     this.name = 'BufferGraphqlError';
     this.code = code || undefined;
     this.httpStatus = httpStatus || undefined;
     this.channelId = channelId || undefined;
     this.reponseBrute = reponseBrute || undefined;
+    this.mediaStable = mediaStable || undefined;
   }
 }
 
@@ -263,7 +265,7 @@ const MUTATION_CREATE_POST = `
  * la variante d'erreur ; l'ancien code concluait « succès » à tort).
  * Renvoie { postId, status, dueAt, channel, channelId, reponseBrute }.
  */
-export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, env = process.env } = {}) {
+export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, produitNom = null, env = process.env } = {}) {
   // ROUTAGE MODE (introspection live 2026-09-17 + 2026-10-21) :
   // ShareMode = addToQueue | customScheduled | shareNext | shareNow
   // SchedulingType = automatic | notification
@@ -290,35 +292,34 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
   // JAMAIS localhost). L'alt text (ImageMetadataInput) ne s'applique qu'aux images.
   const enVideo = mediaType === 'video';
 
-  // URL STABLE pour posts programmés/mis en file (MICRO-11) :
+  // URL STABLE pour posts programmés/mis en file (MICRO-11v2-ter) :
   // Les images de rang (images/produit-N.jpg) sont décalées à chaque ajout.
   // Les URLs stables (images/stables/<slug-oeuvre>.jpg) NE bougent JAMAIS.
-  // Si useStableUrl=true et mediaUrl est une URL de rang, on la résout via stable-map.json.
+  //
+  // La carte stable-map.json N'EST PLUS CONSULTÉE : elle peut être périmée
+  // (preuve 23/10 — carte 34 œuvres / catalogue 35 → image du rang N+1 reçue).
+  // La résolution se fait sur contenu.js COURANT (rang → œuvre → slug), crée
+  // la copie manquante et REFUSE d'envoyer si les SHA diffèrent.
   let finalMediaUrl = mediaUrl;
-  if (useStableUrl && !enVideo && mediaUrl && !mediaUrl.includes('/stables/')) {
+  let mediaStable = null;
+  if (useStableUrl && !enVideo && mediaUrl) {
     try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const { fileURLToPath } = await import('url');
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
-      const ROOT_DIR = path.resolve(__dirname, '..');
-      const MAPPING_FILE = path.join(ROOT_DIR, 'registre', 'stable-map.json');
-      if (fs.existsSync(MAPPING_FILE)) {
-        const mapping = JSON.parse(fs.readFileSync(MAPPING_FILE, 'utf-8'));
-        // Chercher par rang actuel (produit-N) ou par slug si déjà stable
-        const relKey = mediaUrl.startsWith('images/') ? mediaUrl : ('images/' + path.basename(mediaUrl).split('?')[0]);
-        if (mapping[relKey]) {
-          finalMediaUrl = mapping[relKey];
-        } else {
-          // Fallback : essayer de déduire le slug depuis le nom de fichier
-          const basename = path.basename(mediaUrl).split('?')[0].replace(/\.(jpg|jpeg|png|webp)$/i, '');
-          const stableKey = 'stable:' + basename;
-          if (mapping[stableKey]) finalMediaUrl = mapping[stableKey];
-        }
+      mediaStable = resoudreMediaStable(mediaUrl, {
+        siteDir: env.MEDIAS_STABLES_SITE_DIR || undefined,
+        produitNom
+      });
+      if (mediaStable.statut === 'rang') finalMediaUrl = mediaStable.cheminRelatif;
+      if (mediaStable.cree) {
+        console.warn(
+          `[Buffer] Média stable créé à l'envoi : ${mediaStable.cheminRelatif} (œuvre « ${mediaStable.nom} ») — ` +
+          `commit + push site-web requis pour que l'URL soit servie par GitHub Pages.`
+        );
       }
     } catch (e) {
-      console.warn('[Buffer] Résolution URL stable échouée, utilisation URL originale:', e.message);
+      if (e instanceof MediaStableError) {
+        throw new BufferGraphqlError(e.message, { code: e.code, mediaStable: e.details });
+      }
+      throw e;
     }
   }
   // Construire URL absolue GitHub Pages si chemin relatif
@@ -393,7 +394,10 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
     channel: outcome.post.channel || null,
     channelId,
     mode,
-    reponseBrute
+    reponseBrute,
+    // Média réellement envoyé (rang → URL stable si useStableUrl) + preuve SHA.
+    mediaUrl: finalMediaUrl,
+    mediaStable
   };
 }
 
@@ -458,12 +462,13 @@ export function appliquerLimitePinterest500(texte) {
  *         => programmation CLOUD réelle (PC éteint OK)
  *      avec la variante du réseau ; média image (assets image) OU vidéo
  *      (assets video, URL publique vérifiée côté server.js).
- *   4. URL STABLE (MICRO-11) : si useStableUrl=true, résolution via stable-map.json
- *      pour éviter les vignettes corrompues par le décalage des rangs.
+ *   4. URL STABLE (MICRO-11v2-ter) : si useStableUrl=true, résolution DYNAMIQUE
+ *      depuis contenu.js courant (jamais stable-map.json) + création de la
+ *      copie manquante + garde-fou SHA (blocage si désynchronisé).
  * Renvoie { postId, status, dueAt, channelId, channel, board, mode, scheduledAt } — lève
  * BufferGraphqlError (message + code) que server.js journalise.
  */
-export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, env = process.env } = {}) {
+export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, produitNom = null, env = process.env } = {}) {
   if (!SERVICE_ATTENDU[reseau]) throw new BufferGraphqlError(`Réseau non routé vers Buffer : ${reseau}`);
   const canalId = await resoudreCanalReseau({ reseau, env });
   let board = null;
@@ -481,7 +486,7 @@ export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, ti
     limitePin = appliquerLimitePinterest500(texte);
     texte = limitePin.texte;
   }
-  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, mediaType, videoUrl, scheduledAt, useStableUrl, env });
+  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, mediaType, videoUrl, scheduledAt, useStableUrl, produitNom, env });
   return {
     ...outcome, board, mode: outcome.mode || (modePublication === 'queue' ? 'addToQueue' : modePublication === 'schedule' ? 'customScheduled' : 'shareNow'),
     scheduledAt: outcome.dueAt || scheduledAt,
