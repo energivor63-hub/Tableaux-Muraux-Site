@@ -34,10 +34,31 @@ import {
   definirVideoUrlFiche
 } from './control-tower-engine.js';
 // SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
-import { publierViaBufferGraphql, appliquerLimitePinterest500, lireCanaux, requeteGraphQL } from './buffer-graphql.js';
+import { publierViaBufferGraphql, appliquerLimitePinterest500, lireCanaux, requeteGraphQL, sonderEditionPost, remesierPostMedia } from './buffer-graphql.js';
 // 🖼️ MICRO-11v2-ter — médias stables : résolution DYNAMIQUE à l'envoi +
 // resynchronisation (hooks ajout/remplacement/édition). Jamais de carte périmée.
 import { resynchroniserStables, resumeResync } from './medias-stables.js';
+// 🗂️ MICRO-11v2-quater — journal social : ISO UTC unique, dédoublonnage,
+// archivage mensuel (le journal actif reste court ; l'historique est reconstitué).
+import {
+  normaliserEntree,
+  produitIdEntree,
+  ajouterEntreeJournal,
+  enregistrerEntreesJournal,
+  lireJournalActif,
+  lireJournalComplet,
+  migrerJournal,
+  marquerJournalRemedie
+} from './journal-social.js';
+// 🛡️ MICRO-11v2-quater — garde-fou SHIFT : référentiel = inventaire Buffer réel,
+// filtre futur/rang/source dashboard + suggestion stable lue à l'affichage.
+import {
+  construireSujets,
+  indexerJournal,
+  sourcePourPost,
+  listeManuelle,
+  EXPLICATION_FILTRE
+} from './shift-guard.js';
 // 🛡️ Phase B — variantes par réseau + hash anti-doublon (légendes distinctes IG/FB/PIN)
 // 🎯 Session 2026-09-18 — qualité rédactionnelle : hashtags Instagram
 // dédoublonnés (Set ordonné, plafond 11) + CTA « lien en bio », adjectifs
@@ -566,8 +587,10 @@ app.post('/api/control-tower/update-product', async (req, res) => {
     const entry = {
       type: 'EDITION',
       id: `ed_${Date.now()}`,
-      date: now.toLocaleString('fr-FR'),
+      date: now.toISOString(),
       isoDate: now.toISOString(),
+      source: 'dashboard',
+      produitId: `produit-${rank}`,
       produit: `produit-${rank}`,
       productRank: rank,
       nouveauNom: champs.nom,
@@ -649,7 +672,17 @@ function journaliserIntegration(entree) {
     let hist = [];
     try { hist = JSON.parse(fs.readFileSync(chemin, 'utf-8')); } catch (e) { hist = []; }
     if (!Array.isArray(hist)) hist = [];
-    hist.unshift({ ...entree, date: new Date().toLocaleString('fr-FR'), isoDate: new Date().toISOString() });
+    // MICRO-11v2-quater : UNE SEULE forme d'horodatage (ISO UTC) + source.
+    const iso = new Date().toISOString();
+    hist.unshift({
+      ...entree,
+      date: iso,
+      isoDate: iso,
+      source: entree && entree.source === 'manuel-buffer' ? 'manuel-buffer' : 'dashboard',
+      produitId: (entree && (entree.produitId || entree.produit))
+        || nomProduitDepuisUrl(entree && entree.mediaUrl)
+        || null
+    });
     fs.writeFileSync(chemin, JSON.stringify(hist, null, 2), 'utf-8');
   } catch (e) {
     console.warn('[social] journal_integrations.json non écrit :', e.message);
@@ -917,6 +950,24 @@ const SOCIAL_DRAFTS_PATH = path.join(SOCIAL_JOURNAL_DIR, 'social-drafts.json');
 // Garantir l'existence du dossier journaux
 if (!fs.existsSync(SOCIAL_JOURNAL_DIR)) {
   fs.mkdirSync(SOCIAL_JOURNAL_DIR, { recursive: true });
+}
+
+// 🗂️ MICRO-11v2-quater — MIGRATION IDEMPOTENTE AU DÉMARRAGE :
+// dédoublonne (platform, isoUTC, produitId), normalise les horodatages ISO UTC
+// et archive published/error + entrées > 7 jours dans journal-YYYY-MM.json.
+// Le journal actif reste court ; l'historique complet est reconstitué à la
+// lecture (lireJournalComplet → actif + archives).
+try {
+  const migration = migrerJournal();
+  if (migration.fusionnees || migration.archivees) {
+    console.log(
+      `[journal] migration : ${migration.fusionnees} doublon(s) fusionné(s), ` +
+      `${migration.archivees} entrée(s) archivée(s), ${migration.actives} active(s) ` +
+      `(avant : ${migration.avant}).`
+    );
+  }
+} catch (e) {
+  console.warn(`[journal] migration ignorée : ${e.message}`);
 }
 
 // ═══ LOT C — CACHE-BUSTING : JAMAIS d'UI périmée après un correctif ═══
@@ -1282,6 +1333,14 @@ async function executerPublication(body, ciblesForcees) {
           platform,
           content: texte,
           mediaUrl,
+          // MICRO-11v2-quater : traçabilité + source + clé de dédoublonnage.
+          postId: outcome ? outcome.postId : undefined,
+          source: 'dashboard',
+          produitId: produitIdEntree({ mediaUrl }) || undefined,
+          isoUTC: sjDueAt || new Date().toISOString(),
+          mediaUrlStable: outcome && outcome.mediaStable && outcome.mediaStable.cheminRelatif
+            ? `${PUBLIC_MEDIA_BASE}${outcome.mediaStable.cheminRelatif}`
+            : undefined,
           videoUrl: videoUrl || undefined,
           mediaType,
           status: sjStatus,
@@ -1317,7 +1376,15 @@ async function executerPublication(body, ciblesForcees) {
       console.log(`[publication] ${r.reseau} | statut=refus (garde-fou anti-doublon) | ${r.message}`);
     });
 
-    fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
+    // 🗂️ MICRO-11v2-quater : normalisation ISO + dédoublonnage + archivage.
+    // Le journal actif ne garde que les entrées non archivables ; published/
+    // error partent dans journal-YYYY-MM.json (historique reconstitué à la lecture).
+    try {
+      enregistrerEntreesJournal(journal);
+    } catch (e) {
+      console.warn(`[journal] écriture : ${e.message}`);
+      fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(journal, null, 2), 'utf-8');
+    }
 
     // Erreurs regroupées dans le bloc de l'intégrateur unique (Buffer).
     // Neutralisation 19/09/2026 : plus de bloc alternatif.
@@ -1729,35 +1796,41 @@ app.post('/api/social/schedule', async (req, res) => {
       scheduledAt: outcome.scheduledAt || outcome.dueAt || null
     });
 
-    // Journal social (dashboard)
-    const SOCIAL_JOURNAL_PATH = path.join(ROOT_DIR, 'dashboard', 'journaux', 'social-journal.json');
-    let sj = [];
-    if (fs.existsSync(SOCIAL_JOURNAL_PATH)) {
-      sj = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    // Journal social (dashboard) — module unique : ISO UTC, dédoublonnage,
+    // source dashboard, archivage. SOCIAL_JOURNAL_PATH est respecté (tests).
+    try {
+      ajouterEntreeJournal({
+        id: `queue_${Date.now()}_${platform}`,
+        date: new Date().toISOString(),
+        platform,
+        content,
+        mediaUrl: finalMediaUrl,
+        postId: outcome.postId,
+        source: 'dashboard',
+        produitId: produitIdEntree({ mediaUrl: finalMediaUrl }) || undefined,
+        isoUTC: outcome.scheduledAt || outcome.dueAt || scheduledAtIso || null,
+        mediaUrlStable: outcome.mediaStable && outcome.mediaStable.cheminRelatif
+          ? `${PUBLIC_MEDIA_BASE}${outcome.mediaStable.cheminRelatif}`
+          : undefined,
+        // Média réellement envoyé (URL stable) + preuve SHA (MICRO-11v2-ter)
+        mediaUrlEnvoyee: outcome.mediaUrl || null,
+        mediaStable: outcome.mediaStable
+          ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
+          : undefined,
+        videoUrl: finalVideoUrl || undefined,
+        mediaType,
+        status: 'scheduled',
+        scheduleDate: outcome.scheduledAt || outcome.dueAt || scheduledAtIso,
+        integrateur: 'buffer',
+        mode: 'buffer-cloud-schedule',
+        fileAttente: true,
+        dueAt: outcome.scheduledAt || outcome.dueAt || null,
+        channelIds: outcome.channelId ? [outcome.channelId] : undefined,
+        board: outcome.board ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url } : undefined
+      });
+    } catch (e) {
+      console.warn(`[journal] programmation : ${e.message}`);
     }
-    sj.unshift({
-      id: `queue_${Date.now()}_${platform}`,
-      date: new Date().toISOString(),
-      platform,
-      content,
-      mediaUrl: finalMediaUrl,
-      // Média réellement envoyé (URL stable) + preuve SHA (MICRO-11v2-ter)
-      mediaUrlEnvoyee: outcome.mediaUrl || null,
-      mediaStable: outcome.mediaStable
-        ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
-        : undefined,
-      videoUrl: finalVideoUrl || undefined,
-      mediaType,
-      status: 'scheduled',
-      scheduleDate: outcome.scheduledAt || outcome.dueAt || scheduledAtIso,
-      integrateur: 'buffer',
-      mode: 'buffer-cloud-schedule',
-      fileAttente: true,
-      dueAt: outcome.scheduledAt || outcome.dueAt || null,
-      channelIds: outcome.channelId ? [outcome.channelId] : undefined,
-      board: outcome.board ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url } : undefined
-    });
-    fs.writeFileSync(SOCIAL_JOURNAL_PATH, JSON.stringify(sj, null, 2), 'utf-8');
 
     res.json({
       success: true,
@@ -1782,102 +1855,200 @@ app.post('/api/social/schedule', async (req, res) => {
   }
 });
 
-// 📬 // ?? INVENTAIRE FILE BUFFER (MICRO-11) : lecture seule GraphQL des posts
-// programm?s / en file par canal. Renvoie : id, date, titre, mediaUrl, canal,
-// statut + badge "INCONNU" si absent des journaux locaux (fant?me).
-app.get('/api/social/buffer-queue', async (req, res) => {
-  try {
-    const canaux = await lireCanaux();
-    const resultats = [];
-
-    // Query GraphQL Relay : posts(input:{organizationId}) ? edges.node
-    // L'API Buffer ne filtre pas par channelIds/statuses dans PostsInput.
-    // On r?cup?re TOUS les posts de l'organisation et on filtre c?t? serveur.
-    const QUERY_POSTS_QUEUE = `
-      query GetPosts($input: PostsInput!) {
-        posts(input: $input) {
-          edges {
-            node {
-              id
-              text
-              status
-              dueAt
-              channel { id name service }
-              assets { source }
-            }
-          }
+// ── INVENTAIRE BUFFER — RÉFÉRENTIEL UNIQUE DU GARDE-FOU SHIFT ──────────
+// Lecture seule GraphQL : posts scheduled/queued des canaux gérés.
+// Aucune décision ici : le filtre « à re-médier » vit dans shift-guard.js
+// (statut + dueAt futur + média rang + source dashboard).
+const QUERY_POSTS_QUEUE = `
+  query GetPosts($input: PostsInput!) {
+    posts(input: $input) {
+      edges {
+        node {
+          id
+          text
+          status
+          dueAt
+          channel { id name service }
+          assets { source }
         }
       }
-    `;
+    }
+  }
+`;
 
-    const orgId = process.env.BUFFER_ORGANIZATION_ID;
-    if (!orgId) {
-      return res.json({ success: false, error: 'BUFFER_ORGANIZATION_ID manquant' });
+async function lireInventaireBuffer() {
+  const canaux = await lireCanaux();
+  const orgId = process.env.BUFFER_ORGANIZATION_ID;
+  if (!orgId) throw new Error('BUFFER_ORGANIZATION_ID manquant');
+
+  const { data, reponseBrute } = await requeteGraphQL({
+    query: QUERY_POSTS_QUEUE,
+    variables: { input: { organizationId: orgId } }
+  });
+  const edges = (data && data.posts && data.posts.edges) ? data.posts.edges : [];
+
+  const canauxById = {};
+  for (const [reseau, channelId] of Object.entries(canaux)) {
+    if (channelId) canauxById[channelId] = reseau;
+  }
+
+  const posts = [];
+  for (const edge of edges) {
+    const post = edge && edge.node;
+    if (!post) continue;
+    const channelId = post.channel && post.channel.id;
+    const reseau = canauxById[channelId];
+    if (!reseau) continue; // canal non géré (ex. Twitter, LinkedIn)
+    if (post.status !== 'scheduled' && post.status !== 'queued') continue;
+
+    posts.push({
+      postId: post.id,
+      reseau,
+      channelId,
+      channelName: post.channel && post.channel.name,
+      channelService: post.channel && post.channel.service,
+      texte: post.text ? post.text.slice(0, 120) : '',
+      statut: post.status,
+      dueAt: post.dueAt,
+      mediaUrl: (post.assets && post.assets[0] && post.assets[0].source) || null,
+      reponseBrute: masquerSecrets(reponseBrute)
+    });
+  }
+  return { posts, canaux };
+}
+
+// 📬 INVENTAIRE FILE BUFFER (MICRO-11) — lecture seule, badge source.
+app.get('/api/social/buffer-queue', async (req, res) => {
+  try {
+    const { posts } = await lireInventaireBuffer();
+    const index = indexerJournal(lireJournalComplet());
+    for (const p of posts) {
+      p.source = sourcePourPost(p, index);
+      // « inconnu » = absent du journal dashboard → programmé à la main sur
+      // Buffer Web (vidéos) : jamais re-médié par le garde-fou.
+      p.inconnu = p.source === 'manuel-buffer';
+    }
+    res.json({ success: true, posts });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// 🛡️ GARDE-FOU SHIFT (MICRO-11v2-quater) — référentiel = inventaire Buffer.
+// Renvoie UNIQUEMENT les posts futurs qui portent encore un rang, hors
+// source manuel-buffer, avec la suggestion stable lue à l'affichage.
+app.get('/api/social/shift-guard', async (req, res) => {
+  try {
+    const { posts } = await lireInventaireBuffer();
+    const journal = lireJournalComplet();
+    const sujets = construireSujets(posts, { journal });
+    const edition = await sonderEditionPost();
+    res.json({
+      success: true,
+      now: new Date().toISOString(),
+      total: sujets.length,
+      posts: sujets,
+      edition,
+      filtre: EXPLICATION_FILTRE
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+});
+
+// Vérifie que l'URL stable est réellement servie (GitHub Pages) avant de
+// toucher au post Buffer : une copie créée par resync n'est pas déployée.
+async function urlPubliqueDisponible(url) {
+  try {
+    const reponse = await fetch(url, { method: 'HEAD' });
+    if (reponse.status === 405) return true; // HEAD refusé mais GET possible
+    return reponse.ok;
+  } catch {
+    return false;
+  }
+}
+
+// 🔧 RE-MÉDIATION BULK — editPost (assets) si supporté, sinon liste manuelle.
+app.post('/api/social/shift-guard/remedier', async (req, res) => {
+  try {
+    const { postIds, forcer = false } = req.body || {};
+    const { posts } = await lireInventaireBuffer();
+    const journal = lireJournalComplet();
+    let sujets = construireSujets(posts, { journal });
+
+    if (Array.isArray(postIds) && postIds.length) {
+      const demandes = new Set(postIds.map(String));
+      sujets = sujets.filter((s) => demandes.has(String(s.postId)));
+    }
+    if (!sujets.length) {
+      return res.json({
+        success: true, total: 0, supporte: true, remediés: 0, echecs: [],
+        message: 'Aucun post futur à re-médier.'
+      });
     }
 
-    try {
-      const { data, reponseBrute } = await requeteGraphQL({
-        query: QUERY_POSTS_QUEUE,
-        variables: { input: { organizationId: orgId } }
+    const edition = await sonderEditionPost();
+    if (!edition.supporte) {
+      return res.json({
+        success: true,
+        supporte: false,
+        edition,
+        total: sujets.length,
+        aEditerManuellement: listeManuelle(sujets),
+        message: 'Édition automatique non supportée par Buffer — éditez ces posts manuellement.'
       });
-      const edges = (data && data.posts && data.posts.edges) ? data.posts.edges : [];
+    }
 
-      // Filtrer les posts par canal connu et statut scheduled/queued
-      const canauxById = {};
-      for (const [reseau, channelId] of Object.entries(canaux)) {
-        if (channelId) canauxById[channelId] = reseau;
-      }
-
-      for (const edge of edges) {
-        const post = edge?.node;
-        if (!post) continue;
-        const channelId = post.channel?.id;
-        const reseau = canauxById[channelId];
-        if (!reseau) continue; // canal non g?r? (ex. Twitter, LinkedIn)
-        if (post.status !== 'scheduled' && post.status !== 'queued') continue;
-
+    const resultats = [];
+    for (const sujet of sujets) {
+      if (!sujet.stableUrl) {
         resultats.push({
-          postId: post.id,
-          reseau,
-          channelId,
-          channelName: post.channel?.name,
-          channelService: post.channel?.service,
-          texte: post.text?.slice(0, 120),
-          statut: post.status,
-          dueAt: post.dueAt,
-          mediaUrl: post.assets?.[0]?.source || null,
-          reponseBrute: masquerSecrets(reponseBrute)
+          postId: sujet.postId, ok: false,
+          error: sujet.erreurStable || 'URL stable indisponible',
+          code: 'MEDIA_STABLE_INDISPONIBLE'
+        });
+        continue;
+      }
+      if (!forcer) {
+        const dispo = await urlPubliqueDisponible(sujet.stableUrl);
+        if (!dispo) {
+          resultats.push({
+            postId: sujet.postId, ok: false,
+            code: 'MEDIA_STABLE_NON_DEPLOYE',
+            error: `URL stable non servie (404) : ${sujet.stableUrl} — commit/push site-web requis.`
+          });
+          continue;
+        }
+      }
+      try {
+        const outcome = await remesierPostMedia({
+          postId: sujet.postId,
+          stableUrl: sujet.stableUrl,
+          altText: sujet.altText || ''
+        });
+        marquerJournalRemedie(sujet.postId, sujet.stableUrl, { candidat: sujet });
+        resultats.push({
+          postId: sujet.postId, ok: true,
+          stableUrl: sujet.stableUrl, post: outcome
+        });
+      } catch (e) {
+        resultats.push({
+          postId: sujet.postId, ok: false,
+          error: e.message, code: e.code || null
         });
       }
-    } catch (e) {
-      resultats.push({
-        reseau: 'all',
-        erreur: e.message,
-        reponseBrute: masquerSecrets(e.reponseBrute)
-      });
     }
 
-    // Croisement avec journaux locaux pour d?tecter les fant?mes
-    const JOURNAL_INT_PATH = path.join(ROOT_DIR, 'journal_integrations.json');
-    const JOURNAL_SOC_PATH = path.join(ROOT_DIR, 'dashboard', 'journaux', 'social-journal.json');
-    const postIdsLocaux = new Set();
-    [JOURNAL_INT_PATH, JOURNAL_SOC_PATH].forEach(p => {
-      if (fs.existsSync(p)) {
-        try {
-          const j = JSON.parse(fs.readFileSync(p, 'utf-8'));
-          j.forEach(e => {
-            if (e.postId) postIdsLocaux.add(e.postId);
-            if (e.id && e.id.startsWith('queue_')) postIdsLocaux.add(e.id);
-          });
-        } catch {}
-      }
+    const remediés = resultats.filter((r) => r.ok).length;
+    res.json({
+      success: true,
+      supporte: true,
+      edition,
+      total: sujets.length,
+      remediés,
+      echecs: resultats.filter((r) => !r.ok),
+      resultats
     });
-
-    resultats.forEach(r => {
-      r.inconnu = !postIdsLocaux.has(r.postId) && !postIdsLocaux.has(`queue_${r.postId}`);
-    });
-
-    res.json({ success: true, posts: resultats });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
@@ -1919,26 +2090,23 @@ app.post('/api/social/buffer-next-slots', async (req, res) => {
   }
 });
 
-// Historique des publications
+// Historique des publications (actif + archives, dédoublonné).
+// ?actif=1 → journal actif seul (fichier court).
 app.get('/api/social/journal', (req, res) => {
   try {
-    if (!fs.existsSync(SOCIAL_JOURNAL_PATH)) {
-      return res.json({ success: true, journal: [] });
-    }
-    const journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    const journal = req.query.actif === '1'
+      ? lireJournalActif().map(normaliserEntree)
+      : lireJournalComplet();
     res.json({ success: true, journal });
   } catch (err) {
     res.json({ success: false, error: err.message });
   }
 });
 
-// Statistiques par plateforme
+// Statistiques par plateforme (historique complet : actif + archives)
 app.get('/api/social/stats', (req, res) => {
   try {
-    if (!fs.existsSync(SOCIAL_JOURNAL_PATH)) {
-      return res.json({ success: true, stats: { facebook: 0, instagram: 0, pinterest: 0 } });
-    }
-    const journal = JSON.parse(fs.readFileSync(SOCIAL_JOURNAL_PATH, 'utf-8'));
+    const journal = lireJournalComplet();
     const stats = { facebook: 0, instagram: 0, pinterest: 0 };
     journal.forEach(entry => {
       if (stats[entry.platform] !== undefined) stats[entry.platform]++;

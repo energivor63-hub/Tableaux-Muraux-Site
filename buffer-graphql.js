@@ -495,3 +495,111 @@ export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, ti
       : {})
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// RE-MÉDIATION D'UN POST PROGRAMMÉ (MICRO-11v2-quater, 26/10/2026)
+// Sonde d'introspection LIVE : updatePost est ABSENT du schéma Buffer,
+// mais editPost(input: EditPostInput!) existe et permet de remplacer les
+// assets (image) d'un post déjà programmé. C'est la voie officielle.
+// ═══════════════════════════════════════════════════════════════════════
+
+const QUERY_SONDE_EDITION = `
+  query ProbeEditPost {
+    mutation: __type(name: "Mutation") { fields { name } }
+    input: __type(name: "EditPostInput") { inputFields { name } }
+  }`;
+
+let cacheSondeEdition = null; // { at, valeur } — 5 min, jamais de spam d'introspection
+
+/**
+ * Sonde la capacité d'édition média : editPost existe ET EditPostInput
+ * expose id + assets. updatePost est reporté séparément (attendu : false).
+ * Ne lève jamais : renvoie { supporte:false, erreur } si Buffer est injoignable.
+ */
+export async function sonderEditionPost({ env = process.env, forcer = false, requete = requeteGraphQL } = {}) {
+  if (!forcer && cacheSondeEdition && (Date.now() - cacheSondeEdition.at) < 5 * 60 * 1000) {
+    return cacheSondeEdition.valeur;
+  }
+  let valeur;
+  try {
+    const { data } = await requete({ env, query: QUERY_SONDE_EDITION });
+    const mutations = ((data && data.mutation && data.mutation.fields) || []).map((f) => f.name);
+    const champs = ((data && data.input && data.input.inputFields) || []).map((f) => f.name);
+    valeur = {
+      supporte: mutations.includes('editPost') && champs.includes('id') && champs.includes('assets'),
+      mutation: 'editPost',
+      updatePost: mutations.includes('updatePost'),
+      editPost: mutations.includes('editPost'),
+      champs,
+      sonde: new Date().toISOString()
+    };
+  } catch (e) {
+    valeur = {
+      supporte: false,
+      mutation: 'editPost',
+      updatePost: false,
+      editPost: false,
+      champs: [],
+      erreur: e.message,
+      sonde: new Date().toISOString()
+    };
+  }
+  cacheSondeEdition = { at: Date.now(), valeur };
+  return valeur;
+}
+
+export function resetSondeEdition() {
+  cacheSondeEdition = null;
+}
+
+const MUTATION_EDIT_POST_MEDIA = `
+  mutation EditPostMedia($input: EditPostInput!) {
+    editPost(input: $input) {
+      __typename
+      ... on PostActionSuccess { post { id status dueAt } }
+      ... on InvalidInputError { message }
+      ... on UnauthorizedError { message }
+      ... on NotFoundError { message }
+      ... on LimitReachedError { message }
+      ... on UnexpectedError { message }
+      ... on RestProxyError { message }
+    }
+  }`;
+
+/**
+ * Remplace le média d'un post Buffer existant via editPost (assets image).
+ * On n'envoie QUE id + assets : dueAt, texte, mode et planification sont
+ * conservés par Buffer. Lève BufferGraphqlError sur tout échec.
+ */
+export async function remesierPostMedia({ postId, stableUrl, altText = '', env = process.env, requete = requeteGraphQL } = {}) {
+  const id = String(postId || '').trim();
+  const url = String(stableUrl || '').trim();
+  if (!id) throw new BufferGraphqlError('editPost : postId manquant');
+  if (!/^https?:\/\//i.test(url)) throw new BufferGraphqlError(`editPost : URL stable invalide (${url || 'vide'})`);
+
+  const input = { id, assets: [{ image: { url } }] };
+  if (altText) input.assets[0].image.metadata = { altText: String(altText) };
+
+  const { data, reponseBrute } = await requete({
+    env,
+    query: MUTATION_EDIT_POST_MEDIA,
+    variables: { input }
+  });
+  const outcome = data && data.editPost;
+  if (!outcome) {
+    throw new BufferGraphqlError('Buffer editPost : réponse vide', { reponseBrute });
+  }
+  if (outcome.__typename === 'PostActionSuccess' && outcome.post && outcome.post.id) {
+    return {
+      postId: outcome.post.id,
+      status: outcome.post.status || null,
+      dueAt: outcome.post.dueAt || null,
+      reponseBrute,
+      via: 'editPost'
+    };
+  }
+  throw new BufferGraphqlError(
+    `Buffer editPost (${outcome.__typename}) : ${outcome.message || 'échec inconnu'}`,
+    { code: outcome.__typename, reponseBrute }
+  );
+}
