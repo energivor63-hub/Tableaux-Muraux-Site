@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Mode vitrine — Tableaux Muraux</title>
+    <meta name="description" content="Mode vitrine 9:16 pour la capture vidéo des œuvres Tableaux Muraux.">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700;900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="showcase.css">
+</head>
+<body class="is-vitrine">
+    <!--
+      MODE VITRINE 9:16 — capture vidéo propre.
+      URL : showcase.html?collection=calligraphie&mode=vitrine
+      Paramètres utiles :
+        collection=calligraphie|paysages|floral|abstrait|geometrique|autres|all
+        style=traditionnel|contemporain|...   env=salon|riad|...
+        loop=1|0        boucle après le CTA (défaut : 0)
+        autoplay=0      démarre en pause (S pour lancer)
+        start=1         commence à l'œuvre N
+        duration=2500   durée par œuvre (ms)
+        cta=3000        durée du CTA final (ms)
+        transition=600  durée du fondu (ms)
+        fit=contain|cover   cadrage de l'œuvre (défaut : contain)
+        preload=0       saute l'attente de préchargement (tests)
+      Clavier : S/ESPACE lecture-pause · ←/→ navigation · F plein écran
+                L boucle · ÉCHAP quitter (retour galerie)
+    -->
+    <main class="stage" id="stage">
+        <div class="frame" id="frame" role="region" aria-label="Vitrine Tableaux Muraux" aria-live="off">
+            <div class="layer" id="layer-a" aria-hidden="true"></div>
+            <div class="layer" id="layer-b" aria-hidden="true"></div>
+
+            <!-- Filigrane atelier (fixe, ne clignote pas entre les œuvres) -->
+            <div class="watermark" aria-hidden="true">
+                <span class="wm-name">Tableaux Muraux</span>
+                <span class="wm-sub">Marrakech · Atelier</span>
+            </div>
+            <div class="monogram" aria-hidden="true"><span>TM</span></div>
+
+            <div class="loader" id="loader" role="status" aria-label="Préchargement des œuvres">
+                <div class="loader-mark">TM</div>
+                <div class="loader-line"><span></span></div>
+            </div>
+
+            <div class="sr-only" id="a11y-status" aria-live="polite"></div>
+        </div>
+    </main>
+
+    <script src="contenu.js"></script>
+    <script src="showcase.js" defer></script>
+</body>
+</html>
