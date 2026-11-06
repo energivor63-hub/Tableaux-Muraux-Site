@@ -205,6 +205,10 @@
             ? `${categorie} · ${style}`
             : categorie;
         const ambiance = produit.ambiance ? `<span class="price-note">${escapeHtml(produit.ambiance)}</span>` : '';
+        // SOURCE UNIQUE : champ `prix` de contenu.js, jamais un plancher codé en dur.
+        const prix = (typeof Prix !== 'undefined' && Prix && typeof Prix.prixAffiche === 'function')
+            ? Prix.prixAffiche(produit)
+            : 'Prix sur demande';
 
         return `
             <div class="slide">
@@ -218,7 +222,7 @@
                     <div class="kicker">${escapeHtml(kicker)}</div>
                     <h1 class="title">${escapeHtml(produit.nom)}</h1>
                     <div class="price-row">
-                        <span class="price">À partir de 70 MAD</span>
+                        <span class="price">${escapeHtml(prix)}</span>
                         ${ambiance}
                     </div>
                 </div>

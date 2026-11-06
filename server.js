@@ -553,7 +553,7 @@ app.post('/api/control-tower/update-product', async (req, res) => {
       categorie: str(uiChamps.categorie).trim() || oldProduct.categorie,
       style: str(uiChamps.style).trim() || oldProduct.style,
       environnement: str(uiChamps.environnement).trim() || oldProduct.environnement,
-      prix: str(uiChamps.prix).trim() || oldProduct.prix || 'À partir de 180 MAD',
+      prix: str(uiChamps.prix).trim() || oldProduct.prix || 'Prix sur demande',
       badge: str(uiChamps.badge).trim() || oldProduct.badge || null,
       materiauRecommande: str(uiChamps.materiauRecommande).trim() || oldProduct.materiauRecommande,
       montageRecommande: str(uiChamps.montageRecommande).trim() || oldProduct.montageRecommande,

@@ -321,7 +321,7 @@ export function getCurrentCatalog() {
       const categorie = getField('categorie') || 'autres';
       const style = getField('style') || 'traditionnel';
       const environnement = getField('environnement') || 'salon';
-      const prix = getField('prix') || 'À partir de 180 MAD';
+      const prix = getField('prix') || 'Prix sur demande';
       const badge = getField('badge');
       const materiauRecommande = getField('materiauRecommande') || 'Toile Canvas';
       const montageRecommande = getField('montageRecommande') || 'Cadre Américain';
@@ -1546,7 +1546,7 @@ export async function prepareReplacement() {
     originalName: meta.originalName || staging.filename,
     currentImageUrl: oldProduct.image || `images/produit-${rank}.jpg`,
     droppedImageUrl: staging.url,
-    oldPrix: oldProduct.prix || 'À partir de 180 MAD',
+    oldPrix: oldProduct.prix || 'Prix sur demande',
     oldProduct,
     newChamps: JSON.parse(JSON.stringify(champs))
   };
@@ -1838,7 +1838,7 @@ export async function executeReplacement(productRank, prixSaisi, uiChamps) {
 
   champs.prix = (typeof prixSaisi === 'string' && prixSaisi.trim())
     ? prixSaisi.trim()
-    : (oldProduct.prix || champs.prix || 'À partir de 180 MAD');
+    : (oldProduct.prix || champs.prix || 'Prix sur demande');
   champs.badge = 'Nouveau';
 
   // 2. Sauvegarde horodatée (ancienne image + contenu.js + staging) AVANT toute modification

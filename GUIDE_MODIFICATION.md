@@ -117,6 +117,16 @@ jamais affiché aux clients). Il n'est **jamais modifié** par le script.
 
 ## 💰 Modifier les prix
 
+> **RÈGLE ABSOLUE — SOURCE UNIQUE DU PRIX**
+> Le prix affiché vient **UNIQUEMENT** du champ `prix` de `contenu.js`.
+> Il n'est **jamais** codé en dur dans le code, les overlays (mode vitrine
+> 9:16), les cartes de la galerie, la fiche, le panneau Prix du dashboard ou
+> les textes sociaux (Pinterest, Facebook, Instagram). Pour changer un prix,
+> modifiez uniquement `prix` ci-dessous, puis ré-enregistrez les vidéos
+> vitrine des collections concernées (l'overlay prix est incrusté dans le MP4).
+> Champ absent, vide ou contenant `xxxx` → « Prix sur demande » (jamais un
+> montant par défaut).
+
 Les prix sont actuellement au format : **"À partir de xxxx MAD"**
 
 ### Pour afficher un prix réel

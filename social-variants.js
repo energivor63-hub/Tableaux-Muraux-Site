@@ -73,6 +73,16 @@ const MOTIF_LIGNE_HASHTAGS = /^\s*(?:#[\p{L}\p{N}_]+\s*)+$/u;
 const MOTIF_LIGNE_MOTS_CLES = /^\s*mots[-\s]?cl[ée]s\s*:/i;
 
 /**
+ * Prix affiché d'une fiche : champ `prix` de contenu.js TEL QUEL.
+ * Miroir de site-web/prix.js (script classique, non importable en ESM) :
+ * absent, vide ou contenant « xxxx » → « Prix sur demande ».
+ */
+function prixFiche(fiche) {
+  const brut = fiche && typeof fiche.prix === 'string' ? fiche.prix.trim() : '';
+  return (!brut || /xxxx/i.test(brut)) ? 'Prix sur demande' : brut;
+}
+
+/**
  * Adjectifs qualifiants surveillés (règle (a)) : chaque famille ne peut
  * apparaître qu'UNE fois par variante. Les replis suivent l'accord
  * (majestueux → imposant, majestueuse → imposante…).
@@ -369,16 +379,17 @@ export function genererVariantes(fiche) {
   const seoCat = SEO_PAR_CATEGORIE[fiche?.categorie] || SEO_PAR_CATEGORIE.autres;
   const envLabel = LABELS_ENVIRONNEMENT[fiche?.environnement] || LABELS_ENVIRONNEMENT.autres;
   const matiere = fiche?.materiauRecommande || 'bâche premium';
-  const prix = fiche?.prix || 'Prix sur demande';
+  const prix = prixFiche(fiche);
 
-  // ── Instagram : accroche courte + corps plafonné + CTA « lien en bio » + 5 hashtags ──
-  // GABARIT (20/09/2026) : la légende (hors hashtags) respecte le max du
-  // compteur (200). Le CTA précède TOUJOURS le bloc de hashtags (aucun lien
-  // cliquable en légende Instagram) ; le prix vit dans son champ dédié, pas
-  // dans la légende ; règle (a) appliquée sur tout le texte.
-  const accrocheIg = `✨ ${nom} — fait main à Marrakech.`;
+  // ── Instagram : accroche avec prix réel + corps plafonné + CTA « lien en bio » + 5 hashtags ──
+  // GABARIT (06/11/2026) : le prix vient UNIQUEMENT de contenu.js et figure
+  // dans la légende (accroche), en plus du champ prix de l'éditeur. La légende
+  // (hors hashtags) respecte toujours le max du compteur (200) ; le CTA précède
+  // TOUJOURS le bloc de hashtags (aucun lien cliquable en légende Instagram) ;
+  // règle (a) appliquée sur tout le texte.
+  const accrocheIg = `✨ ${nom} — ${prix}.`;
   const corpsIgComplet = `${sansPointFinal(fiche?.ambiance || 'Pièce unique')}, en ${matiere.toLowerCase()}. ${String(fiche?.description || '').replace(/\s+/g, ' ').trim()}`.trim();
-  const budgetIg = MAX_LEGENDE_INSTAGRAM - accrocheIg.length - CTA_LIEN_BIO.length - 4; // 2× \n\n
+  const budgetIg = MAX_LEGENDE_INSTAGRAM - accrocheIg.length - CTA_LIEN_BIO.length - 8; // séparateurs
   const corpsIg = premierePhrase(corpsIgComplet, Math.max(25, budgetIg));
   const instagramBrut = limiterAdjectifsQualifiants([
     accrocheIg,
@@ -391,9 +402,11 @@ export function genererVariantes(fiche) {
   ].join('\n'));
   // Garantie finale (les replis de la règle (a) allongent : « dorée » → « au
   // fini lumineux ») : légende ≤ 200, CTA conservé ; hashtags intacts.
+  // On réserve 1 caractère pour le saut de ligne qui précède le bloc de
+  // hashtags (le compteur du réseau compte la légende entière, séparateur inclus).
   const hashIg = instagramBrut.split('\n').filter((l) => MOTIF_LIGNE_HASHTAGS.test(l)).join(' ');
   const captionBrute = instagramBrut.split('\n').filter((l) => !MOTIF_LIGNE_HASHTAGS.test(l)).join('\n').trim();
-  const instagram = plafonnerLegendeInstagram(captionBrute).texte + '\n\n' + hashIg;
+  const instagram = plafonnerLegendeInstagram(captionBrute, MAX_LEGENDE_INSTAGRAM - 1).texte + '\n\n' + hashIg;
 
   // ── Facebook : phrase longue + CTA WhatsApp + lien du site (règle (a)) ──
   // GABARIT (20/09/2026) : le texte respecte le max du compteur (400) — la

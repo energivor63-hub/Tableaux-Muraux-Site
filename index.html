@@ -805,6 +805,8 @@
 
     <!-- Fichier de contenu modifiable (P2a D10 : ?v=hash-court anti-cache) -->
     <script src="contenu.js?v=53eedd03"></script>
+    <!-- Prix : source unique = champ `prix` de contenu.js (aucun plancher codé en dur). -->
+    <script src="prix.js"></script>
     <script src="injection-contenu.js?v=a6dc2766"></script>
 
     <script>
@@ -1119,7 +1121,7 @@
         return true;
     });
     document.getElementById('gallery-grid').innerHTML = produitsVisibles.map((p, i) => {
-        const prixMasque = p.prix.includes('xxxx');
+        const prixMasque = Prix.prixEstMasque(p);
         return `
         <div class="gallery-item" data-category="${p.categorie}" data-style="${p.style || ''}" data-env="${p.environnement || ''}">
             <div class="gallery-image ${p.image ? '' : 'fallback'}" data-img="${p.image}" data-fallback="${p.imageFallback || '🎨'}">
@@ -1142,7 +1144,7 @@
                 ` : ''}
                 ${p.ambiance ? `<div class="gallery-ambiance">✨ ${p.ambiance}</div>` : ''}
                 <div class="gallery-footer">
-                    <span class="gallery-price ${prixMasque ? 'masque' : ''}">${p.prix}</span>
+                    <span class="gallery-price ${prixMasque ? 'masque' : ''}">${Prix.prixAffiche(p)}</span>
                     <button class="gallery-action" data-product="${p.nom}">Commander</button>
                 </div>
             </div>
