@@ -412,3 +412,134 @@ export function resumeResync(resultat) {
     mappingEcrit: resultat.mappingEcrit
   };
 }
+
+/**
+ * MICRO-STABLE-ALERT — état de santé des médias stables.
+ *
+ * Compare les TROIS sources de vérité :
+ *   1. contenu.js (œuvres courantes + image source) ;
+ *   2. registre/stable-map.json (clés produit-N et stable:<slug>) ;
+ *   3. images/stables/ (copies physiques + SHA-256 source ⇄ stable).
+ *
+ * Un problème « bloquant » est : copie stable manquante, SHA différent,
+ * image source absente ou clé de carte absente/incohérente/obsolète.
+ * Les fichiers stables orphelins sont signalés à part (non bloquants).
+ *
+ * @param {{ siteDir?: string }} [options]
+ * @returns {{
+ *   sain: boolean, total: number, totalProblemes: number,
+ *   manquants: number, desynchronises: number, cartes: number,
+ *   sourcesManquantes: number, problemes: Array<object>,
+ *   orphelins: string[], mappingFile: string, stablesDir: string,
+ *   verifieLe: string
+ * }}
+ */
+export function verifierMediasStables({ siteDir } = {}) {
+  const racine = racineSite(siteDir);
+  const catalogue = lireCatalogue({ siteDir: racine });
+  const stablesDir = path.join(racine, 'images', 'stables');
+  const mappingFile = path.join(racine, '..', 'registre', 'stable-map.json');
+
+  let mapping = {};
+  try {
+    const brut = JSON.parse(fs.readFileSync(mappingFile, 'utf-8'));
+    if (brut && typeof brut === 'object' && !Array.isArray(brut)) mapping = brut;
+  } catch {
+    mapping = {};
+  }
+
+  const problemes = [];
+  const slugs = new Set();
+  const rangsValides = new Set();
+
+  for (const oeuvre of catalogue) {
+    slugs.add(oeuvre.slug);
+    rangsValides.add(`produit-${oeuvre.rang}`);
+
+    const imageSource = cheminRelatifImage(oeuvre.image);
+    const srcAbs = path.join(racine, imageSource);
+    if (!imageSource || !fs.existsSync(srcAbs)) {
+      problemes.push({
+        type: 'source-manquante', rang: oeuvre.rang, nom: oeuvre.nom, slug: oeuvre.slug,
+        chemin: imageSource || '(vide)',
+        message: `image source absente : ${imageSource || '(vide)'}`
+      });
+      continue;
+    }
+
+    const ext = path.extname(imageSource).toLowerCase() || '.jpg';
+    const stableRelTheorique = `images/stables/${oeuvre.slug}${ext}`;
+    const existant = fichierStableExistant(stablesDir, oeuvre.slug);
+    const stableRel = existant ? `images/stables/${path.basename(existant)}` : stableRelTheorique;
+    const stableAbs = existant || path.join(racine, stableRelTheorique);
+
+    if (!fs.existsSync(stableAbs)) {
+      problemes.push({
+        type: 'manquant', rang: oeuvre.rang, nom: oeuvre.nom, slug: oeuvre.slug,
+        chemin: stableRel,
+        message: `copie stable manquante : ${stableRel}`
+      });
+    } else {
+      const shaSource = sha256Fichier(srcAbs);
+      const shaStable = sha256Fichier(stableAbs);
+      if (shaSource !== shaStable) {
+        problemes.push({
+          type: 'desynchronise', rang: oeuvre.rang, nom: oeuvre.nom, slug: oeuvre.slug,
+          chemin: stableRel, shaSource, shaStable,
+          message: `SHA différent : ${imageSource} ≠ ${stableRel}`
+        });
+      }
+    }
+
+    // Carte : les deux clés doivent désigner la copie stable attendue.
+    for (const cle of [`produit-${oeuvre.rang}`, `stable:${oeuvre.slug}`]) {
+      const actuel = mapping[cle] || null;
+      if (actuel !== stableRel) {
+        problemes.push({
+          type: 'carte', rang: oeuvre.rang, nom: oeuvre.nom, slug: oeuvre.slug,
+          cle, attendu: stableRel, actuel,
+          message: `carte ${cle} : « ${actuel || '(absente)'} » ≠ « ${stableRel} »`
+        });
+      }
+    }
+  }
+
+  // Clés obsolètes : présentes dans la carte mais plus dans le catalogue.
+  for (const cle of Object.keys(mapping)) {
+    if (cle.startsWith('stable:')) {
+      if (!slugs.has(cle.slice('stable:'.length))) {
+        problemes.push({
+          type: 'carte', cle, actuel: mapping[cle],
+          message: `carte ${cle} : slug absent du catalogue`
+        });
+      }
+    } else if (/^produit-\d+$/.test(cle) && !rangsValides.has(cle)) {
+      problemes.push({
+        type: 'carte', cle, actuel: mapping[cle],
+        message: `carte ${cle} : rang absent du catalogue`
+      });
+    }
+  }
+
+  // Fichiers stables sans œuvre correspondante (non bloquants).
+  const fichiers = fs.existsSync(stablesDir) ? fs.readdirSync(stablesDir) : [];
+  const orphelins = fichiers
+    .filter((f) => /\.(jpe?g|png|webp)$/i.test(f) && !slugs.has(f.replace(/\.[a-z0-9]+$/i, '')))
+    .map((f) => `images/stables/${f}`);
+
+  const compter = (type) => problemes.filter((p) => p.type === type).length;
+  return {
+    sain: problemes.length === 0,
+    total: catalogue.length,
+    totalProblemes: problemes.length,
+    manquants: compter('manquant'),
+    desynchronises: compter('desynchronise'),
+    cartes: compter('carte'),
+    sourcesManquantes: compter('source-manquante'),
+    problemes,
+    orphelins,
+    mappingFile,
+    stablesDir,
+    verifieLe: new Date().toISOString()
+  };
+}

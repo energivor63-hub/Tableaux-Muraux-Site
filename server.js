@@ -37,7 +37,7 @@ import {
 import { publierViaBufferGraphql, appliquerLimitePinterest500, lireCanaux, requeteGraphQL, sonderEditionPost, remesierPostMedia } from './buffer-graphql.js';
 // 🖼️ MICRO-11v2-ter — médias stables : résolution DYNAMIQUE à l'envoi +
 // resynchronisation (hooks ajout/remplacement/édition). Jamais de carte périmée.
-import { resynchroniserStables, resumeResync } from './medias-stables.js';
+import { resynchroniserStables, resumeResync, verifierMediasStables } from './medias-stables.js';
 // 🗂️ MICRO-11v2-quater — journal social : ISO UTC unique, dédoublonnage,
 // archivage mensuel (le journal actif reste court ; l'historique est reconstitué).
 import {
@@ -133,6 +133,80 @@ function resyncMediasStablesApres(changement) {
     return { erreur: e.message };
   }
 }
+
+/**
+ * MICRO-STABLE-ALERT — journal local des resync MANUELS déclenchés depuis le
+ * dashboard. Chaque entrée : date, source, durée, créés/actualisés/erreurs.
+ * Fichier dédié (jamais mêlé au journal d'intégration produit).
+ */
+function journaliserResyncStables(entree) {
+  try {
+    const journalFile = path.join(ROOT_DIR, 'registre', 'journal_resync_stables.json');
+    let journal = [];
+    try {
+      const brut = JSON.parse(fs.readFileSync(journalFile, 'utf-8'));
+      if (Array.isArray(brut)) journal = brut;
+    } catch { /* fichier absent ou illisible → journal neuf */ }
+    journal.push(entree);
+    if (journal.length > 200) journal = journal.slice(-200);
+    fs.writeFileSync(journalFile, JSON.stringify(journal, null, 2), 'utf-8');
+    return journalFile;
+  } catch (e) {
+    console.error('[medias-stables] journal resync ÉCHEC :', e.message);
+    return null;
+  }
+}
+
+// 🩺 État de santé : contenu.js ⇄ stable-map.json ⇄ images/stables/ (+ SHA).
+// Utilisé au chargement du dashboard pour afficher (ou masquer) le bandeau.
+app.get('/api/admin/medias-stables/etat', (req, res) => {
+  try {
+    const etat = verifierMediasStables();
+    res.type('application/json').json({ success: true, ...etat });
+  } catch (err) {
+    console.error('Erreur état médias stables :', err);
+    res.status(500).type('application/json').json({ success: false, error: err.message });
+  }
+});
+
+// 🔄 Wrapper serveur de « stabiliser_medias.mjs --resync » : reconstruit la
+// carte + recopie/actualise les médias stables, puis renvoie l'état rafraîchi.
+app.post('/api/admin/resync', (req, res) => {
+  const debut = Date.now();
+  try {
+    const resultat = resynchroniserStables();
+    const resume = resumeResync(resultat);
+    const entree = {
+      date: new Date().toISOString(),
+      source: 'dashboard-manuel',
+      dureeMs: Date.now() - debut,
+      crees: resume.crees,
+      actualises: resume.actualises,
+      inchanges: resume.inchanges,
+      erreurs: resume.erreurs.length,
+      detailsErreurs: resume.erreurs,
+      orphelins: resume.orphelins.length,
+      clesObsoletes: resume.clesObsoletes.length
+    };
+    const journal = journaliserResyncStables(entree);
+    const etat = verifierMediasStables();
+    console.log(
+      `[medias-stables] resync MANUEL dashboard : ${resume.crees} créé(s), ` +
+      `${resume.actualises} actualisé(s), ${resume.erreurs.length} erreur(s).`
+    );
+    res.type('application/json').json({ success: true, resume, journal, etat });
+  } catch (err) {
+    journaliserResyncStables({
+      date: new Date().toISOString(),
+      source: 'dashboard-manuel',
+      dureeMs: Date.now() - debut,
+      erreurs: 1,
+      detailsErreurs: [{ error: err.message }]
+    });
+    console.error('Erreur resync médias stables :', err);
+    res.status(500).type('application/json').json({ success: false, error: err.message });
+  }
+});
 
 // Configuration Multer pour enregistrer la maquette sous images/produit-0.ext
 const storage = multer.diskStorage({
