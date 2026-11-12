@@ -249,6 +249,47 @@ const MUTATION_CREATE_POST = `
     }
   }`;
 
+/* ═══════════════════════════════════════════════════════════════════════
+ * MICRO-13 — PAYLOAD VIDÉO ALIGNÉ SUR registre/sonde_video.json
+ * Introspection live 12/11/2026 :
+ *   AssetInput.video → VideoAssetInput { url: String!, thumbnailUrl,
+ *   metadata: VideoMetadataInput { thumbnailOffset, title } }.
+ *   Facebook/Instagram exigent metadata.<réseau>.type (NON_NULL) ;
+ *   Instagram exige aussi shouldShareToFeed (Boolean!) ;
+ *   Pinterest n'a AUCUN champ type (titre/board/url seulement).
+ * ═══════════════════════════════════════════════════════════════════════ */
+export function construireAssetVideo({ videoUrl, thumbnailUrl = '', titreVideo = '' } = {}) {
+  const url = String(videoUrl || '').trim();
+  if (!url) throw new BufferGraphqlError('Asset vidéo : URL publique manquante');
+  const video = { url };
+  if (thumbnailUrl) video.thumbnailUrl = String(thumbnailUrl);
+  if (titreVideo) video.metadata = { title: String(titreVideo) };
+  return { video };
+}
+
+/**
+ * Métadonnées PAR RÉSEAU d'un post vidéo. `videoType` = 'reel' pour une
+ * variante verticale 9:16, 'post' sinon (note IG documentée dans
+ * sonde_video.json : Instagram peut convertir un feed vidéo en reel selon
+ * le ratio ; on n'invente jamais de ratio).
+ */
+export function construireMetadataVideo({ reseau, board = null, titrePin = '', lien = '', videoType = 'post' } = {}) {
+  if (reseau === 'pinterest') {
+    if (!board || !board.serviceId) return null;
+    const pinterest = { boardServiceId: board.serviceId };
+    if (titrePin) pinterest.title = String(titrePin);
+    if (lien) pinterest.url = String(lien);
+    return { pinterest };
+  }
+  if (reseau === 'facebook') {
+    return { facebook: { type: videoType === 'reel' ? 'reel' : 'post' } };
+  }
+  if (reseau === 'instagram') {
+    return { instagram: { type: videoType === 'reel' ? 'reel' : 'post', shouldShareToFeed: true } };
+  }
+  return null;
+}
+
 /**
  * UNE mutation createPost par réseau, avec SA variante de texte :
  *   channelId (SINGULIER — introspection) · text · mode shareNow (publication
@@ -265,7 +306,7 @@ const MUTATION_CREATE_POST = `
  * la variante d'erreur ; l'ancien code concluait « succès » à tort).
  * Renvoie { postId, status, dueAt, channel, channelId, reponseBrute }.
  */
-export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, produitNom = null, env = process.env } = {}) {
+export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, titrePin, lien, board, modePublication = 'now', mediaType = 'image', videoUrl = '', thumbnailUrl = '', titreVideo = '', videoType = 'post', scheduledAt = null, useStableUrl = false, produitNom = null, env = process.env, requete = requeteGraphQL } = {}) {
   // ROUTAGE MODE (introspection live 2026-09-17 + 2026-10-21) :
   // ShareMode = addToQueue | customScheduled | shareNext | shareNow
   // SchedulingType = automatic | notification
@@ -335,11 +376,21 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
     mode,                        // NON_NULL ShareMode — shareNow | addToQueue | customScheduled
     needsApproval: false,        // NON_NULL Boolean — publication directe, sans file d'approbation
     aiAssisted: true,            // disclosure IA (CreatePostInput.aiAssisted — SESSION 13)
-    assets: enVideo ? [{ video: { url: videoUrl } }] : [{ image: { url: finalMediaUrl } }]
+    // MICRO-13 : payload vidéo aligné sur registre/sonde_video.json
+    // (VideoAssetInput.url + thumbnailUrl + metadata.title optionnels).
+    assets: enVideo
+      ? [construireAssetVideo({ videoUrl, thumbnailUrl, titreVideo })]
+      : [{ image: { url: finalMediaUrl } }]
   };
   if (dueAt) input.dueAt = dueAt; // customScheduled uniquement
   if (altText && !enVideo) input.assets[0].image.metadata = { altText }; // ImageMetadataInput.altText
-  if (reseau === 'pinterest' && board) {
+  if (enVideo) {
+    // type NON_NULL par réseau : Facebook → post|reel|story ; Instagram →
+    // post|reel (+ shouldShareToFeed Boolean!) ; Pinterest → AUCUN type,
+    // seulement boardServiceId/title/url.
+    const metaVideo = construireMetadataVideo({ reseau, board, titrePin, lien, videoType });
+    if (metaVideo) input.metadata = metaVideo;
+  } else if (reseau === 'pinterest' && board) {
     input.metadata = { pinterest: { boardServiceId: board.serviceId } };
     if (titrePin) input.metadata.pinterest.title = titrePin;
     if (lien) input.metadata.pinterest.url = lien; // lien de destination du site
@@ -361,7 +412,7 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
       input.metadata.instagram.shouldShareToFeed = true;
     }
   }
-  const { data, reponseBrute } = await requeteGraphQL({ env, query: MUTATION_CREATE_POST, variables: { input } });
+  const { data, reponseBrute } = await requete({ env, query: MUTATION_CREATE_POST, variables: { input } });
   const outcome = data && data.createPost;
   if (!outcome) {
     throw new BufferGraphqlError('Buffer : réponse createPost vide (ni PostActionSuccess ni MutationError)', { channelId, reponseBrute });
@@ -397,6 +448,8 @@ export async function creerPost({ reseau, channelId, texte, mediaUrl, altText, t
     reponseBrute,
     // Média réellement envoyé (rang → URL stable si useStableUrl) + preuve SHA.
     mediaUrl: finalMediaUrl,
+    mediaType: enVideo ? 'video' : 'image',
+    videoUrl: enVideo ? videoUrl : null,
     mediaStable
   };
 }
@@ -468,7 +521,7 @@ export function appliquerLimitePinterest500(texte) {
  * Renvoie { postId, status, dueAt, channelId, channel, board, mode, scheduledAt } — lève
  * BufferGraphqlError (message + code) que server.js journalise.
  */
-export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', mediaType = 'image', videoUrl = '', scheduledAt = null, useStableUrl = false, produitNom = null, env = process.env } = {}) {
+export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, titrePin, lien, modePublication = 'now', mediaType = 'image', videoUrl = '', thumbnailUrl = '', titreVideo = '', videoType = 'post', scheduledAt = null, useStableUrl = false, produitNom = null, env = process.env } = {}) {
   if (!SERVICE_ATTENDU[reseau]) throw new BufferGraphqlError(`Réseau non routé vers Buffer : ${reseau}`);
   const canalId = await resoudreCanalReseau({ reseau, env });
   let board = null;
@@ -486,7 +539,7 @@ export async function publierViaBufferGraphql({ reseau, texte, mediaUrl, alt, ti
     limitePin = appliquerLimitePinterest500(texte);
     texte = limitePin.texte;
   }
-  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, mediaType, videoUrl, scheduledAt, useStableUrl, produitNom, env });
+  const outcome = await creerPost({ reseau, channelId: canalId, texte, mediaUrl, altText: alt, titrePin, lien, board, modePublication, mediaType, videoUrl, thumbnailUrl, titreVideo, videoType, scheduledAt, useStableUrl, produitNom, env });
   return {
     ...outcome, board, mode: outcome.mode || (modePublication === 'queue' ? 'addToQueue' : modePublication === 'schedule' ? 'customScheduled' : 'shareNow'),
     scheduledAt: outcome.dueAt || scheduledAt,
@@ -600,6 +653,54 @@ export async function remesierPostMedia({ postId, stableUrl, altText = '', env =
   }
   throw new BufferGraphqlError(
     `Buffer editPost (${outcome.__typename}) : ${outcome.message || 'échec inconnu'}`,
+    { code: outcome.__typename, reponseBrute }
+  );
+}
+
+/**
+ * MICRO-13 — Remplace l'ASSET VIDÉO d'un post Buffer existant via editPost.
+ * Même mutation que la re-médiation image, mais payload
+ * `assets: [{ video: { url, thumbnailUrl?, metadata? } }]` (sonde_video.json).
+ * Seuls `id` + `assets` sont envoyés : dueAt, texte, mode et planification
+ * restent inchangés côté Buffer. Lève BufferGraphqlError sur tout échec.
+ */
+export async function remesierPostMediaVideo({
+  postId,
+  videoUrl,
+  thumbnailUrl = '',
+  titreVideo = '',
+  env = process.env,
+  requete = requeteGraphQL
+} = {}) {
+  const id = String(postId || '').trim();
+  const url = String(videoUrl || '').trim();
+  if (!id) throw new BufferGraphqlError('editPost vidéo : postId manquant');
+  if (!/^https?:\/\//i.test(url)) throw new BufferGraphqlError(`editPost vidéo : URL publique invalide (${url || 'vide'})`);
+
+  const input = { id, assets: [construireAssetVideo({ videoUrl: url, thumbnailUrl, titreVideo })] };
+
+  const { data, reponseBrute } = await requete({
+    env,
+    query: MUTATION_EDIT_POST_MEDIA,
+    variables: { input }
+  });
+  const outcome = data && data.editPost;
+  if (!outcome) {
+    throw new BufferGraphqlError('Buffer editPost vidéo : réponse vide', { reponseBrute });
+  }
+  if (outcome.__typename === 'PostActionSuccess' && outcome.post && outcome.post.id) {
+    return {
+      postId: outcome.post.id,
+      status: outcome.post.status || null,
+      dueAt: outcome.post.dueAt || null,
+      reponseBrute,
+      via: 'editPost',
+      mediaType: 'video',
+      videoUrl: url
+    };
+  }
+  throw new BufferGraphqlError(
+    `Buffer editPost vidéo (${outcome.__typename}) : ${outcome.message || 'échec inconnu'}`,
     { code: outcome.__typename, reponseBrute }
   );
 }

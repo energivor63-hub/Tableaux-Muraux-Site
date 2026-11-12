@@ -34,7 +34,20 @@ import {
   definirVideoUrlFiche
 } from './control-tower-engine.js';
 // SESSION 2026-09-17 : publication unifiée Buffer GraphQL (facebook + instagram + pinterest)
-import { publierViaBufferGraphql, appliquerLimitePinterest500, lireCanaux, requeteGraphQL, sonderEditionPost, remesierPostMedia } from './buffer-graphql.js';
+import { publierViaBufferGraphql, appliquerLimitePinterest500, lireCanaux, requeteGraphQL, sonderEditionPost, remesierPostMedia, remesierPostMediaVideo } from './buffer-graphql.js';
+// 🎬 MICRO-13 — hébergement public contrôlé des MP4 (kappa.lol → x0.at),
+// carte registre/video-map.json (slug + SHA256) et vérification HEAD stricte.
+import {
+  obtenirUrlVideoPublique,
+  verifierUrlVideo,
+  lireVideoMap,
+  sha256Fichier,
+  VIDEO_MAP_PATH,
+  ErreurHebergementVideo
+} from '../registre/hebergeur_videos.mjs';
+// 🎬 MICRO-13 — watchdog vidéo : sélection journal + re-médiation editPost,
+// dépendances injectées (testable sans réseau).
+import { executerVideoWatch } from './video-watch.js';
 // 🖼️ MICRO-11v2-ter — médias stables : résolution DYNAMIQUE à l'envoi +
 // resynchronisation (hooks ajout/remplacement/édition). Jamais de carte périmée.
 import { resynchroniserStables, resumeResync, verifierMediasStables } from './medias-stables.js';
@@ -824,7 +837,7 @@ async function verifierMediaPublic(mediaUrl, fiche) {
  *   2) Range GET bytes=0-0 conservé — HTTP 200/206 + content-type video/*.
  * TEST-ONLY : ALLOW_LOCAL_VIDEO_URL_TEST=1 lève la barrière localhost/http
  * (faux serveur vidéo local) — JAMAIS en production. */
-async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
+async function _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets) {
   const url = String(videoUrl || '').trim();
   if (!url) {
     return { ok: false, url, erreur: 'URL vidéo publique manquante — collez l’URL publique de la vidéo (ex. fichier catbox.moe, gratuit sans compte) ; localhost non publiable.' };
@@ -887,6 +900,18 @@ async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
     console.log(`[media-check] ${url} → ERREUR ${e.message}`);
     return { ok: false, url, contentLength, contentType, erreur: `Vidéo publique inaccessible (${e.message}) : ${url}` };
   }
+}
+
+/**
+ * MICRO-13 — enveloppe : TOUT refus de la vérification vidéo porte le code
+ * stable VIDEO_URL_MORTE (consommé par les routes upload/schedule/watchdog).
+ */
+async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
+  const resultat = await _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets);
+  if (resultat && resultat.ok === false && !resultat.code) {
+    resultat.code = 'VIDEO_URL_MORTE';
+  }
+  return resultat;
 }
 
 /** Check média unique : HTTP 200/206 + content-type image/* UNIQUEMENT —
@@ -1341,6 +1366,9 @@ async function executerPublication(body, ciblesForcees) {
           // errors[]) tronquée 2000 car., secrets masqués.
           reponseBrute: masquerReponseBrute((outcome && outcome.reponseBrute) || (erreurBuf && erreurBuf.reponseBrute)),
           mediaUrl, videoUrl: videoUrl || undefined, mediaType,
+          mediaUrlPublique: videoUrl || undefined,
+          videoFichier: String(body.videoFichier || '').trim() || undefined,
+          videoSha256: String(body.videoSha256 || '').trim() || undefined,
           mediaUrlEnvoyee: outcome ? (outcome.mediaUrl || null) : null,
           mediaStable: (outcome && outcome.mediaStable)
             ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
@@ -1416,6 +1444,9 @@ async function executerPublication(body, ciblesForcees) {
             ? `${PUBLIC_MEDIA_BASE}${outcome.mediaStable.cheminRelatif}`
             : undefined,
           videoUrl: videoUrl || undefined,
+          mediaUrlPublique: videoUrl || undefined,
+          videoFichier: String(body.videoFichier || '').trim() || undefined,
+          videoSha256: String(body.videoSha256 || '').trim() || undefined,
           mediaType,
           status: sjStatus,
           scheduleDate: sjDueAt,
@@ -1718,6 +1749,129 @@ app.get('/api/social/videos', (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// MICRO-13 — VIDÉO AUTOMATIQUE : hébergement public, carte SHA, watchdog
+// ─────────────────────────────────────────────────────────────────────────
+const MOTIF_FICHIER_VIDEO = /^produit-\d+(?:-reel)?\.mp4$/i;
+
+/** Résout un fichier vidéo local SANS traversée de dossier (whitelist motif). */
+function cheminVideoLocale(fichier) {
+  const nom = path.basename(String(fichier || '').trim());
+  if (!MOTIF_FICHIER_VIDEO.test(nom)) return null;
+  const chemin = path.join(VIDEOS_DIR, nom);
+  return fs.existsSync(chemin) && fs.statSync(chemin).isFile() ? chemin : null;
+}
+
+/** Identifie le slug vidéo : produit-N (+ -reel) — jamais le nom du produit. */
+function slugVideoDepuisFichier(fichier) {
+  const nom = path.basename(String(fichier || '').trim()).replace(/\.mp4$/i, '');
+  return MOTIF_FICHIER_VIDEO.test(path.basename(String(fichier || '').trim())) ? nom : null;
+}
+
+/**
+ * POST /api/social/video-upload
+ * Body : { fichier: "produit-12.mp4", produitId?: "produit-12" }
+ * → téléverse (ou réutilise via video-map) et renvoie l'URL publique + SHA.
+ * Échec explicite : { success:false, code, error, repli:'méthode manuelle Buffer Web' }.
+ */
+app.post('/api/social/video-upload', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const fichier = path.basename(String(body.fichier || '').trim());
+    const chemin = cheminVideoLocale(fichier);
+    if (!chemin) {
+      return res.json({
+        success: false,
+        code: 'VIDEO_LOCALE_ABSENTE',
+        error: `MP4 local introuvable ou nom invalide : « ${fichier || '(vide)'} » (attendu produit-N.mp4). Aucune programmation effectuée.`,
+        repli: 'méthode manuelle Buffer Web'
+      });
+    }
+    const slug = slugVideoDepuisFichier(fichier);
+    const resultat = await obtenirUrlVideoPublique({ cheminFichier: chemin, slug });
+    res.json({
+      success: true,
+      fichier,
+      produit: body.produitId || slug.replace(/-reel$/i, ''),
+      variante: /-reel\.mp4$/i.test(fichier) ? 'reel' : 'standard',
+      ...resultat
+    });
+  } catch (err) {
+    res.json({
+      success: false,
+      code: (err && err.code) || 'VIDEO_UPLOAD_ECHEC',
+      error: err.message || 'Téléversement vidéo impossible',
+      details: err && err.details ? err.details : undefined,
+      repli: 'méthode manuelle Buffer Web'
+    });
+  }
+});
+
+/**
+ * GET /api/social/video-map[?verifier=1]
+ * Carte versionnée (métadonnées légères). `verifier=1` ajoute l'état HEAD
+ * (en ligne ?) sans jamais écrire : lecture seule.
+ */
+app.get('/api/social/video-map', async (req, res) => {
+  try {
+    const map = lireVideoMap(VIDEO_MAP_PATH);
+    const verifier = String(req.query.verifier || '') === '1';
+    const entrees = [];
+    for (const [cle, valeur] of Object.entries(map)) {
+      let sante = null;
+      if (verifier && valeur && valeur.urlPublique) {
+        try {
+          sante = await verifierUrlVideo(valeur.urlPublique);
+        } catch (e) {
+          sante = { ok: false, cause: e.message, code: 'VIDEO_URL_MORTE' };
+        }
+      }
+      entrees.push({ cle, ...valeur, enLigne: sante ? sante.ok === true : null, sante });
+    }
+    res.json({ success: true, chemin: 'registre/video-map.json', entrees });
+  } catch (err) {
+    res.json({ success: false, error: err.message, entrees: [] });
+  }
+});
+
+/**
+ * GET|POST /api/social/video-watch — WATCHDOG des vidéos programmées.
+ * Logique dans site-web/video-watch.js (testable avec fausses dépendances) :
+ * journal dashboard + mediaType video + dueAt futur → HEAD URL → URL morte =
+ * re-téléversement ../videos (carte SHA) + editPost(id, assets video).
+ * GET accepte ?dryRun=1 (aucune mutation).
+ */
+async function lancerVideoWatch(dryRun = false) {
+  return executerVideoWatch({
+    journal: lireJournalComplet(),
+    verifierUrl: (url) => verifierUrlVideo(url),
+    upload: ({ cheminFichier, slug }) => obtenirUrlVideoPublique({ cheminFichier, slug }),
+    editPost: ({ postId, videoUrl, thumbnailUrl, titreVideo }) =>
+      remesierPostMediaVideo({ postId, videoUrl, thumbnailUrl, titreVideo }),
+    marquer: (postId, url, opts) => marquerJournalRemedie(postId, url, opts),
+    journaliser: (entree) => journaliserIntegration(entree),
+    cheminVideoLocale,
+    slugVideoDepuisFichier,
+    dryRun
+  });
+}
+
+app.get('/api/social/video-watch', async (req, res) => {
+  try {
+    res.json(await lancerVideoWatch(String(req.query.dryRun || '') === '1'));
+  } catch (err) {
+    res.json({ success: false, error: err.message, resultats: [] });
+  }
+});
+
+app.post('/api/social/video-watch', async (req, res) => {
+  try {
+    res.json(await lancerVideoWatch(!!(req.body && req.body.dryRun === true)));
+  } catch (err) {
+    res.json({ success: false, error: err.message, resultats: [] });
+  }
+});
+
 // GET /api/social/verifier-video?url=… — pré-contrôle vidéo DÉLÉGUÉ au serveur.
 // Le navigateur ne peut PAS vérifier les URLs cross-origin avec redirect
 // (ex. miroirs archive.org sans CORS → NetworkError, boutons bloqués À TORT)
@@ -1798,8 +1952,19 @@ app.post('/api/social/schedule', async (req, res) => {
       return res.json({ success: false, error: 'La date de programmation doit être dans le futur (au moins +1 minute).' });
     }
     const scheduledAtIso = dateProg.toISOString();
-    if (!mediaUrl) {
+    const mediaType = req.body.mediaType === 'video' ? 'video' : 'image';
+    const videoUrlDemande = String(req.body.videoUrl || '').trim();
+    const videoFichier = String(req.body.videoFichier || '').trim() || null;
+    const videoSha256 = String(req.body.videoSha256 || '').trim() || null;
+    const thumbnailUrl = String(req.body.thumbnailUrl || '').trim();
+    const videoType = req.body.videoType === 'reel' ? 'reel' : 'post';
+    // Image → mediaUrl obligatoire ; vidéo → URL publique vidéo obligatoire
+    // (mediaUrl peut rester l'image de la fiche, jamais le média envoyé).
+    if (mediaType !== 'video' && !mediaUrl) {
       return res.json({ success: false, error: 'mediaUrl requise pour la programmation' });
+    }
+    if (mediaType === 'video' && !videoUrlDemande) {
+      return res.json({ success: false, error: 'videoUrl requise pour la programmation vidéo' });
     }
 
     // Résoudre le produit (via produitId, produitNom, ou mediaUrl)
@@ -1809,13 +1974,16 @@ app.post('/api/social/schedule', async (req, res) => {
     const produitCles = [...new Set([produitId, produitNom, nomProduitDepuisUrl(mediaUrl), fiche?.nom, fiche && nomProduitDepuisUrl(fiche?.image), critere].filter(Boolean).map(String))];
 
     // Vérifier média public AVANT envoi (même logique que /api/social/publish)
-    const mediaType = req.body.mediaType || 'image';
     let finalMediaUrl = mediaUrl;
     let finalVideoUrl = null;
     if (mediaType === 'video') {
-      const verifVideo = await verifierVideoPublique(mediaUrl);
+      const tailleAttendue = Number(req.body.videoTailleOctets);
+      const verifVideo = await verifierVideoPublique(
+        videoUrlDemande,
+        Number.isFinite(tailleAttendue) && tailleAttendue > 0 ? tailleAttendue : undefined
+      );
       if (!verifVideo.ok) {
-        return res.json({ success: false, error: verifVideo.erreur });
+        return res.json({ success: false, error: verifVideo.erreur, code: verifVideo.code || 'VIDEO_URL_MORTE' });
       }
       finalVideoUrl = verifVideo.url;
     } else {
@@ -1845,6 +2013,8 @@ app.post('/api/social/schedule', async (req, res) => {
       modePublication: 'schedule',
       mediaType,
       videoUrl: finalVideoUrl,
+      thumbnailUrl,
+      videoType,
       scheduledAt: scheduledAtIso,
       useStableUrl: mediaType !== 'video',
       produitNom: produitNomFinal
@@ -1860,6 +2030,9 @@ app.post('/api/social/schedule', async (req, res) => {
       cause: null, code: undefined,
       reponseBrute: masquerReponseBrute(outcome.reponseBrute),
       mediaUrl: finalMediaUrl, videoUrl: finalVideoUrl || undefined, mediaType,
+      mediaUrlPublique: finalVideoUrl || undefined,
+      videoFichier: videoFichier || undefined,
+      videoSha256: videoSha256 || undefined,
       hashContenu: hashContenu(content), contenu: content,
       channelIds: outcome.channelId ? [outcome.channelId] : undefined,
       mode: outcome.mode || 'customScheduled',
@@ -1892,6 +2065,9 @@ app.post('/api/social/schedule', async (req, res) => {
           ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
           : undefined,
         videoUrl: finalVideoUrl || undefined,
+        mediaUrlPublique: finalVideoUrl || undefined,
+        videoFichier: videoFichier || undefined,
+        videoSha256: videoSha256 || undefined,
         mediaType,
         status: 'scheduled',
         scheduleDate: outcome.scheduledAt || outcome.dueAt || scheduledAtIso,
@@ -1985,6 +2161,7 @@ async function lireInventaireBuffer() {
       statut: post.status,
       dueAt: post.dueAt,
       mediaUrl: (post.assets && post.assets[0] && post.assets[0].source) || null,
+      mediaType: /\.mp4(?:[?#]|$)/i.test(String((post.assets && post.assets[0] && post.assets[0].source) || '')) ? 'video' : 'image',
       reponseBrute: masquerSecrets(reponseBrute)
     });
   }
