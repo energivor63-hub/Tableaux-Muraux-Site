@@ -46,6 +46,15 @@ import {
   FOURNISSEURS_VIDEO,
   ErreurHebergementVideo
 } from '../registre/hebergeur_videos.mjs';
+// 🕰️ MICRO-13.3 — référence UNIQUE heure murale Casablanca → UTC (Intl, TZ
+// indépendant du poste). Toute programmation passe par normaliserDueAt :
+// jamais de « new Date(heureMurale).toISOString() » ni de « Z » accolé.
+import {
+  normaliserDueAt,
+  formaterDueAtCasablanca,
+  formaterHeureDoubleCasablanca,
+  HeureMuraleError
+} from '../registre/heure_casablanca.mjs';
 // 🎬 MICRO-13.2 — raison Buffer visible, hôtes approuvés, état préservé.
 import {
   classerHebergeurVideo,
@@ -1264,7 +1273,15 @@ async function executerPublication(body, ciblesForcees) {
     const modePublication = body.modePublication === 'queue' ? 'queue' : (body.modePublication === 'schedule' ? 'schedule' : 'now');
     const modeBuffer = modePublication === 'queue' ? 'addToQueue' : (modePublication === 'schedule' ? 'customScheduled' : 'shareNow');
     const fileAttente = modePublication === 'queue' || modePublication === 'schedule';
-    const scheduledAt = modePublication === 'schedule' ? body.scheduledAt : null;
+    // MICRO-13.3 — heure murale éventuelle → Casablanca (jamais le fuseau du PC).
+    let scheduledAt = modePublication === 'schedule' ? body.scheduledAt : null;
+    if (scheduledAt) {
+      try {
+        scheduledAt = normaliserDueAt(scheduledAt).iso;
+      } catch (err) {
+        return { success: false, error: err.message, resultats: [], reseauxPublies: [], reseauxEchoues: [] };
+      }
+    }
 
     // 1 ─ Fiche produit + variantes DISTINCTES par réseau
     const critere = body.produitId || body.produitNom || nomProduitDepuisUrl(mediaUrlDemande) || null;
@@ -1462,6 +1479,9 @@ async function executerPublication(body, ciblesForcees) {
           integratorMode,
           fileAttente,
           dueAtRetour: (outcome && (outcome.dueAt || outcome.scheduledAt)) || null,
+          dueAtAffichage: ((outcome && (outcome.scheduledAt || outcome.dueAt)) || scheduledAt)
+            ? formaterDueAtCasablanca((outcome && (outcome.scheduledAt || outcome.dueAt)) || scheduledAt)
+            : undefined,
           board: outcome && outcome.board
             ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url }
             : undefined,
@@ -1535,6 +1555,7 @@ async function executerPublication(body, ciblesForcees) {
           mode: sjMode,
           fileAttente,
           dueAt: sjDueAt,
+          dueAtAffichage: sjDueAt ? formaterDueAtCasablanca(sjDueAt) : undefined,
           channelIds: ((outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId))
             ? [(outcome && outcome.channelId) || (erreurBuf && erreurBuf.channelId)]
             : undefined,
@@ -2083,17 +2104,28 @@ app.post('/api/social/schedule', async (req, res) => {
     if (!scheduleDate) {
       return res.json({ success: false, error: 'Date/heure de programmation requise (scheduleDate ISO 8601)' });
     }
-    // Buffer `dueAt` = DateTime : on n'accepte qu'un INSTANT valide. Une date
-    // sans fuseau (« 2026-10-27T14:30 ») serait interprétée en UTC ou refusée →
-    // normalisation ISO explicite + refus des dates passées.
-    const dateProg = new Date(scheduleDate);
-    if (Number.isNaN(dateProg.getTime())) {
-      return res.json({ success: false, error: `Date de programmation invalide : « ${scheduleDate} » (ISO 8601 attendu).` });
+    // 🕰️ MICRO-13.3 — Buffer `dueAt` = DateTime (instant UTC). Une heure
+    // murale (« 2026-11-15T20:30 ») est TOUJOURS celle de l'atelier
+    // (Africa/Casablanca) → conversion par la référence unique Intl, jamais
+    // par le fuseau du poste. Un instant ISO avec Z/offset reste accepté.
+    let normalisation;
+    try {
+      normalisation = normaliserDueAt(scheduleDate);
+    } catch (err) {
+      return res.json({
+        success: false,
+        error: err instanceof HeureMuraleError
+          ? err.message
+          : `Date de programmation invalide : « ${scheduleDate} » (ISO 8601 attendu).`,
+        code: 'HEURE_MURALE_INVALIDE'
+      });
     }
+    const dateProg = new Date(normalisation.iso);
     if (dateProg.getTime() <= Date.now() + 60 * 1000) {
       return res.json({ success: false, error: 'La date de programmation doit être dans le futur (au moins +1 minute).' });
     }
-    const scheduledAtIso = dateProg.toISOString();
+    const scheduledAtIso = normalisation.iso;
+    const dueAtAffichage = normalisation.affichage;
     const mediaType = req.body.mediaType === 'video' ? 'video' : 'image';
     const videoUrlDemande = String(req.body.videoUrl || '').trim();
     const videoFichier = String(req.body.videoFichier || '').trim() || null;
@@ -2210,6 +2242,7 @@ app.post('/api/social/schedule', async (req, res) => {
         channelIds: (erreurBuffer && erreurBuffer.channelId) ? [erreurBuffer.channelId] : undefined,
         mode: 'customScheduled', integratorMode: 'buffer-cloud-schedule',
         fileAttente: true, dueAtRetour: scheduledAtIso,
+        dueAtAffichage,
         source: 'dashboard', raisonAffichee
       });
       try {
@@ -2232,6 +2265,7 @@ app.post('/api/social/schedule', async (req, res) => {
           mode: 'buffer-cloud-schedule',
           fileAttente: true,
           dueAt: scheduledAtIso,
+          dueAtAffichage,
           channelIds: (erreurBuffer && erreurBuffer.channelId) ? [erreurBuffer.channelId] : undefined,
           error: messageComplet,
           code: codeBuffer,
@@ -2248,6 +2282,8 @@ app.post('/api/social/schedule', async (req, res) => {
         cause: messageComplet,
         code: codeBuffer,
         reseau: platform,
+        dueAt: scheduledAtIso,
+        dueAtAffichage,
         reHebergement: doitProposerRehebergement(messageComplet),
         resultats: [{
           reseau: platform, integrateur: 'buffer', succes: false, action: 'createPost',
@@ -2276,6 +2312,7 @@ app.post('/api/social/schedule', async (req, res) => {
       integratorMode: 'buffer-cloud-schedule',
       fileAttente: true,
       dueAtRetour: outcome.scheduledAt || outcome.dueAt || null,
+      dueAtAffichage: formaterDueAtCasablanca(outcome.scheduledAt || outcome.dueAt || scheduledAtIso),
       board: outcome.board ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url } : undefined,
       scheduledAt: outcome.scheduledAt || outcome.dueAt || null
     });
@@ -2312,6 +2349,7 @@ app.post('/api/social/schedule', async (req, res) => {
         mode: 'buffer-cloud-schedule',
         fileAttente: true,
         dueAt: outcome.scheduledAt || outcome.dueAt || null,
+        dueAtAffichage: formaterDueAtCasablanca(outcome.scheduledAt || outcome.dueAt || scheduledAtIso),
         channelIds: outcome.channelId ? [outcome.channelId] : undefined,
         board: outcome.board ? { id: outcome.board.id, serviceId: outcome.board.serviceId, name: outcome.board.name, url: outcome.board.url } : undefined
       });
@@ -2319,11 +2357,14 @@ app.post('/api/social/schedule', async (req, res) => {
       console.warn(`[journal] programmation : ${e.message}`);
     }
 
+    const dueAtFinal = outcome.scheduledAt || outcome.dueAt || scheduledAtIso;
     res.json({
       success: true,
-      message: `Programmé via Buffer Cloud — envoi prévu le ${new Date(outcome.scheduledAt || outcome.dueAt || scheduledAtIso).toLocaleString('fr-FR', { timeZone: 'UTC' })} UTC`,
+      message: `Programmé via Buffer Cloud — envoi prévu ${formaterDueAtCasablanca(dueAtFinal)}`,
       postId: outcome.postId,
-      dueAt: outcome.scheduledAt || outcome.dueAt,
+      dueAt: dueAtFinal,
+      dueAtAffichage: formaterDueAtCasablanca(dueAtFinal),
+      dueAtUtc: formaterHeureDoubleCasablanca(dueAtFinal).split(' = ')[1],
       mode: 'buffer-cloud-schedule',
       mediaUrlEnvoyee: outcome.mediaUrl || null,
       preControle,
@@ -2577,8 +2618,14 @@ app.post('/api/social/buffer-next-slots', async (req, res) => {
         continue;
       }
       if (scheduledAt) {
-        // Mode customScheduled : la date est imposée par l'utilisateur
-        slots[p] = { mode: 'customScheduled', dueAt: scheduledAt };
+        // Mode customScheduled : la date est imposée par l'utilisateur.
+        // MICRO-13.3 — heure murale interprétée à Casablanca (référence Intl).
+        try {
+          const n = normaliserDueAt(scheduledAt);
+          slots[p] = { mode: 'customScheduled', dueAt: n.iso, dueAtAffichage: n.affichage, typeHeure: n.type };
+        } catch (err) {
+          slots[p] = { mode: 'customScheduled', erreur: err.message };
+        }
       } else {
         // Mode addToQueue : simuler via un createPost "dry-run" n'est pas possible
         // sans envoyer vraiment. On renvoie une estimation basée sur l'heure actuelle
