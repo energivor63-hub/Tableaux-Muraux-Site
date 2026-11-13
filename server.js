@@ -2419,6 +2419,14 @@ app.get('/api/social/buffer-queue', async (req, res) => {
     const index = indexerJournal(lireJournalComplet());
     for (const p of posts) {
       p.source = sourcePourPost(p, index);
+      // MICRO-13.2 — une URL vidéo kappa.lol/x0.at n'a pas d'extension .mp4 :
+      // le journal (postId → mediaType) fait foi, sinon un post vidéo serait
+      // classé « image » et re-médié à tort par les actions bulk.
+      const entree = p.postId ? index.parPostId.get(String(p.postId)) : null;
+      if (entree && entree.mediaType === 'video') {
+        p.mediaType = 'video';
+        p.videoUrl = entree.mediaUrlPublique || entree.videoUrl || p.mediaUrl;
+      }
       // « inconnu » = absent du journal dashboard → programmé à la main sur
       // Buffer Web (vidéos) : jamais re-médié par le garde-fou.
       p.inconnu = p.source === 'manuel-buffer';
