@@ -43,8 +43,27 @@ import {
   lireVideoMap,
   sha256Fichier,
   VIDEO_MAP_PATH,
+  FOURNISSEURS_VIDEO,
   ErreurHebergementVideo
 } from '../registre/hebergeur_videos.mjs';
+// 🎬 MICRO-13.2 — raison Buffer visible, hôtes approuvés, état préservé.
+import {
+  classerHebergeurVideo,
+  estUrlVideoApprouvee,
+  tronquerRaison,
+  doitProposerRehebergement,
+  LONGUEUR_RAISON_AFFICHEE
+} from '../registre/micro13_2_helpers.mjs';
+// 🎬 MICRO-13.2 — pré-contrôles MP4 serveur (durée/ratio/taille) + limites
+// documentées dans registre/sonde_video.json. Avertissements seulement.
+import {
+  sonderVideoLocale,
+  evaluerTousReseaux,
+  evaluerContraintesVideo,
+  lireLimitesVideo,
+  varianteLimites,
+  resumePreControle
+} from '../registre/video-probe.mjs';
 // 🎬 MICRO-13 — watchdog vidéo : sélection journal + re-médiation editPost,
 // dépendances injectées (testable sans réseau).
 import { executerVideoWatch } from './video-watch.js';
@@ -840,8 +859,14 @@ async function verifierMediaPublic(mediaUrl, fiche) {
 async function _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets) {
   const url = String(videoUrl || '').trim();
   if (!url) {
-    return { ok: false, url, erreur: 'URL vidéo publique manquante — collez l’URL publique de la vidéo (ex. fichier catbox.moe, gratuit sans compte) ; localhost non publiable.' };
+    return { ok: false, url, erreur: 'URL vidéo publique manquante — collez l’URL publique de la vidéo (hôtes approuvés : kappa.lol, x0.at, https://archive.org/download/…/*.mp4) ; localhost non publiable.' };
   }
+  const hebergeur = classerHebergeurVideo(url);
+  // Hôtes approuvés MICRO-13.2 : kappa.lol, x0.at, archive.org/download/*.mp4.
+  // archive.org peut annoncer application/octet-stream sur HEAD : accepté pour
+  // un MP4 archive.org (les autres hôtes gardent l'exigence video/*).
+  const typeVideoAccepte = (type) => /^video\//i.test(String(type || ''))
+    || (hebergeur === 'archive.org' && /^application\/octet-stream/i.test(String(type || '')));
   const testLocalAutorise = process.env.ALLOW_LOCAL_VIDEO_URL_TEST === '1'; // TEST-ONLY
   if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(url) && !testLocalAutorise) {
     return { ok: false, url, erreur: 'URL vidéo locale interdite (localhost) — Buffer ne peut pas la télécharger. Fournissez une URL publique https de la vidéo.' };
@@ -861,10 +886,10 @@ async function _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets) {
     console.log(`[media-check] HEAD ${url} → HTTP ${h.status} | content-length: ${h.headers.get('content-length') ?? '?'} | content-type: ${h.headers.get('content-type') || '?'}`);
     if (h.ok) {
       const typeHead = String(h.headers.get('content-type') || '').trim();
-      if (typeHead && !/^video\//i.test(typeHead)) {
-        return { ok: false, url, contentLength, contentType: typeHead || null, erreur: `Vidéo refusée : l’hébergeur annonce content-type « ${typeHead} » (vidéo attendue) — hébergeur incompatible Buffer, choisissez Internet Archive / B2 / R2 : ${url}` };
+      if (typeHead && !typeVideoAccepte(typeHead)) {
+        return { ok: false, url, contentLength, contentType: typeHead || null, hebergeur, erreur: `Vidéo refusée : l’hébergeur annonce content-type « ${typeHead} » (vidéo attendue) — hébergeur incompatible Buffer, choisissez Internet Archive / B2 / R2 : ${url}` };
       }
-      if (/^video\//i.test(typeHead)) contentType = typeHead;
+      if (typeVideoAccepte(typeHead)) contentType = typeHead;
       const clBrut = h.headers.get('content-length');
       const annonce = clBrut === null ? NaN : Number(clBrut);
       if (Number.isFinite(annonce)) {
@@ -885,20 +910,20 @@ async function _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets) {
   try {
     const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' } });
     const type = String((r.headers && r.headers.get('content-type')) || '').trim();
-    console.log(`[media-check] ${url} → HTTP ${r.status} | content-type: ${type || '?'}`);
-    if ((r.status === 200 || r.status === 206) && /^video\//i.test(type)) {
+    console.log(`[media-check] ${url} → HTTP ${r.status} | content-type: ${type || '?'} | hôte: ${hebergeur || 'non répertorié'}`);
+    if ((r.status === 200 || r.status === 206) && typeVideoAccepte(type)) {
       if (contentLength === null) {
         const plage = String((r.headers && r.headers.get('content-range')) || '');
         const total = plage.match(/\/(\d+)\s*$/);
         const cl = Number(r.headers.get('content-length'));
         contentLength = total ? Number(total[1]) : (Number.isFinite(cl) && cl > 1 ? cl : null);
       }
-      return { ok: true, url, contentLength, contentType: type };
+      return { ok: true, url, contentLength, contentType: type, hebergeur, approuve: estUrlVideoApprouvee(url) };
     }
-    return { ok: false, url, contentLength, contentType: (/^video\//i.test(type) ? type : contentType), erreur: `Vidéo publique inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${url}` };
+    return { ok: false, url, contentLength, contentType: (/^video\//i.test(type) ? type : contentType), hebergeur, erreur: `Vidéo publique inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${url}` };
   } catch (e) {
     console.log(`[media-check] ${url} → ERREUR ${e.message}`);
-    return { ok: false, url, contentLength, contentType, erreur: `Vidéo publique inaccessible (${e.message}) : ${url}` };
+    return { ok: false, url, contentLength, contentType, hebergeur, erreur: `Vidéo publique inaccessible (${e.message}) : ${url}` };
   }
 }
 
@@ -912,6 +937,47 @@ async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
     resultat.code = 'VIDEO_URL_MORTE';
   }
   return resultat;
+}
+
+/**
+ * MICRO-13.2 — pré-contrôle LOCAL d'un MP4 (durée/ratio/taille) AVANT envoi.
+ * Toujours non bloquant : renvoie { disponible, meta, reseaux, avertissements }.
+ * ffprobe si présent, sinon parseur MP4 interne (registre/video-probe.mjs).
+ */
+function precontroleVideoLocal(fichier, { reseaux = ['facebook', 'instagram', 'pinterest'], videoType = 'post' } = {}) {
+  const nom = String(fichier || '').trim();
+  const chemin = nom ? cheminVideoLocale(nom) : null;
+  if (!chemin) {
+    return {
+      disponible: false,
+      fichier: nom || null,
+      avertissements: ['pré-contrôle local indisponible (MP4 non sélectionné ou absent de ../videos) — durée/ratio non vérifiés'],
+      conforme: false,
+      meta: null,
+      reseaux: {}
+    };
+  }
+  const meta = sonderVideoLocale(chemin);
+  const evaluation = evaluerTousReseaux(meta, {
+    reseaux: Array.isArray(reseaux) && reseaux.length ? reseaux : ['facebook', 'instagram', 'pinterest'],
+    videoType,
+    limites: lireLimitesVideo()
+  });
+  return {
+    disponible: true,
+    fichier: nom,
+    chemin: path.basename(chemin),
+    meta,
+    ...evaluation,
+    resume: resumePreControle(evaluation)
+  };
+}
+
+function reseauxDepuisRequete(valeur) {
+  if (Array.isArray(valeur)) return valeur.map((v) => String(v).toLowerCase()).filter(Boolean);
+  const texte = String(valeur || '').trim();
+  if (!texte) return ['facebook', 'instagram', 'pinterest'];
+  return texte.split(',').map((v) => v.trim().toLowerCase()).filter((v) => ['facebook', 'instagram', 'pinterest'].includes(v));
 }
 
 /** Check média unique : HTTP 200/206 + content-type image/* UNIQUEMENT —
@@ -1242,6 +1308,21 @@ async function executerPublication(body, ciblesForcees) {
         };
       }
       videoUrl = verifVideo.url;
+      // MICRO-13.2 — pré-contrôles durée/ratio/taille (avertissements seuls).
+      const preControle = precontroleVideoLocal(String(body.videoFichier || '').trim(), {
+        reseaux: platforms,
+        videoType: body.videoType === 'reel' ? 'reel' : 'post'
+      });
+      if (preControle.avertissements && preControle.avertissements.length) {
+        journaliserIntegration({
+          type: 'pre-controle', integrateur: 'local', reseau: platforms.join(', '),
+          produit, produitNom, statut: 'avertissement',
+          message: preControle.avertissements.join(' | '),
+          mediaType, videoFichier: String(body.videoFichier || '').trim() || undefined,
+          videoUrl: videoUrl || undefined
+        });
+      }
+      body.__preControleVideo = preControle;
     } else {
       const verifMedia = await verifierMediaPublic(mediaUrlDemande, fiche);
       if (!verifMedia.ok) {
@@ -1554,6 +1635,7 @@ async function executerPublication(body, ciblesForcees) {
         resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
         parReseau, postUrls, variantes, textesEnvoyes,
         produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente,
+        preControle: body.__preControleVideo || undefined,
         videoUrlMaj: videoUrlMaj || undefined
       };
     }
@@ -1567,6 +1649,7 @@ async function executerPublication(body, ciblesForcees) {
       resultats, reseauxPublies, reseauxEchoues, reseauxRefuses, reseauxNonEnvoyes,
       parReseau, postUrls, variantes, textesEnvoyes,
       produit, produitNom, mediaUrl, mediaType, modePublication, mode: modeBuffer, fileAttente,
+      preControle: body.__preControleVideo || undefined,
       videoUrlMaj: videoUrlMaj || undefined
     };
 }
@@ -1788,12 +1871,38 @@ app.post('/api/social/video-upload', async (req, res) => {
       });
     }
     const slug = slugVideoDepuisFichier(fichier);
-    const resultat = await obtenirUrlVideoPublique({ cheminFichier: chemin, slug });
+    // MICRO-13.2 — « Ré-héberger (x0.at) puis retenter » : fournisseur forcé
+    // + re-téléversement (la carte peut contenir une URL kappa.lol morte).
+    const fournisseurDemande = String(body.fournisseur || '').trim().toLowerCase();
+    const forcerTeleversement = body.forcer === true || body.forcerTeleversement === true;
+    const fournisseurs = fournisseurDemande
+      ? FOURNISSEURS_VIDEO.filter((f) => String(f.nom).toLowerCase() === fournisseurDemande)
+      : FOURNISSEURS_VIDEO;
+    if (fournisseurDemande && !fournisseurs.length) {
+      return res.json({
+        success: false,
+        code: 'VIDEO_FOURNISSEUR_INCONNU',
+        error: `Fournisseur vidéo inconnu : « ${fournisseurDemande} » (attendu kappa.lol ou x0.at).`,
+        repli: 'méthode manuelle Buffer Web'
+      });
+    }
+    const resultat = await obtenirUrlVideoPublique({
+      cheminFichier: chemin,
+      slug,
+      fournisseurs,
+      forcerTeleversement
+    });
+    const preControle = precontroleVideoLocal(fichier, {
+      reseaux: reseauxDepuisRequete(body.reseaux),
+      videoType: body.videoType === 'reel' ? 'reel' : 'post'
+    });
     res.json({
       success: true,
       fichier,
       produit: body.produitId || slug.replace(/-reel$/i, ''),
       variante: /-reel\.mp4$/i.test(fichier) ? 'reel' : 'standard',
+      preControle,
+      avertissements: preControle.avertissements || [],
       ...resultat
     });
   } catch (err) {
@@ -1889,12 +1998,45 @@ app.get('/api/social/verifier-video', async (req, res) => {
       cause: v.ok ? null : (v.erreur || 'Vérification impossible'),
       contentLength: (v.contentLength ?? null),
       contentType: (v.contentType || null),
-      url: v.url ?? null
+      url: v.url ?? null,
+      hebergeur: v.hebergeur || classerHebergeurVideo(v.url || url),
+      approuve: estUrlVideoApprouvee(v.url || url)
     });
   } catch (err) {
     res.type('application/json').json({ ok: false, cause: err.message, contentLength: null, contentType: null, url: null });
   }
 });
+
+/**
+ * GET|POST /api/social/video-preflight — PRÉ-CONTRÔLES MP4 (MICRO-13.2).
+ * Entrée : { fichier: "produit-10.mp4", reseaux?: [...], videoType?: 'post'|'reel' }
+ * Sortie : métadonnées (durée/ratio/taille), limites sonde_video.json et
+ * AVERTISSEMENTS par réseau. Aucun blocage, aucune mutation.
+ */
+function repondrePreflightVideo(req, res) {
+  try {
+    const source = req.method === 'POST' ? (req.body || {}) : (req.query || {});
+    const fichier = path.basename(String(source.fichier || source.videoFichier || '').trim());
+    if (!fichier) {
+      return res.json({ success: false, error: 'fichier MP4 requis (ex. produit-10.mp4)' });
+    }
+    const preControle = precontroleVideoLocal(fichier, {
+      reseaux: reseauxDepuisRequete(source.reseaux || source.reseau),
+      videoType: source.videoType === 'reel' || source.variante === 'reel' ? 'reel' : 'post'
+    });
+    res.json({
+      success: preControle.disponible === true,
+      fichier,
+      ...preControle,
+      limites: lireLimitesVideo(),
+      error: preControle.disponible ? undefined : (preControle.avertissements || [])[0]
+    });
+  } catch (err) {
+    res.json({ success: false, error: err.message });
+  }
+}
+app.get('/api/social/video-preflight', repondrePreflightVideo);
+app.post('/api/social/video-preflight', repondrePreflightVideo);
 
 // GET /api/social/variantes?produit=produit-9 — aperçu des 3 légendes DISTINCTES
 app.get('/api/social/variantes', (req, res) => {
@@ -2001,27 +2143,122 @@ app.post('/api/social/schedule', async (req, res) => {
       return res.json({ success: false, error: etat.message, refusDoublon: true, heures: etat.heures });
     }
 
+    // MICRO-13.2 — pré-contrôles LOCAUX (durée/ratio/taille) AVANT envoi.
+    // Avertissement explicite journalisé + renvoyé au dashboard ; JAMAIS de
+    // blocage silencieux (Buffer reste l'autorité finale).
+    const preControle = mediaType === 'video' && videoFichier
+      ? precontroleVideoLocal(videoFichier, { reseaux: [platform], videoType })
+      : { disponible: false, fichier: videoFichier || null, avertissements: [], conforme: true, reseaux: {} };
+    if (preControle.avertissements && preControle.avertissements.length) {
+      journaliserIntegration({
+        type: 'pre-controle', integrateur: 'local', reseau: platform,
+        produit: produitCles[0] || 'inconnu', produitNom: produitNomFinal,
+        statut: 'avertissement', message: preControle.avertissements.join(' | '),
+        mediaType, videoFichier: videoFichier || undefined,
+        videoUrl: videoUrlDemande || undefined
+      });
+    }
+
     // Appel Buffer GraphQL avec mode 'schedule' + dueAt explicite + URL stable
     // (résolution DYNAMIQUE depuis contenu.js courant, produitNom = identité fiable)
-    const outcome = await publierViaBufferGraphql({
-      reseau: platform,
-      texte: content,
-      mediaUrl: finalMediaUrl,
-      alt: alt || '',
-      titrePin: title || '',
-      lien: link || '',
-      modePublication: 'schedule',
-      mediaType,
-      videoUrl: finalVideoUrl,
-      thumbnailUrl,
-      videoType,
-      scheduledAt: scheduledAtIso,
-      useStableUrl: mediaType !== 'video',
-      produitNom: produitNomFinal
-    });
+    let outcome = null;
+    let erreurBuffer = null;
+    try {
+      outcome = await publierViaBufferGraphql({
+        reseau: platform,
+        texte: content,
+        mediaUrl: finalMediaUrl,
+        alt: alt || '',
+        titrePin: title || '',
+        lien: link || '',
+        modePublication: 'schedule',
+        mediaType,
+        videoUrl: finalVideoUrl,
+        thumbnailUrl,
+        videoType,
+        scheduledAt: scheduledAtIso,
+        useStableUrl: mediaType !== 'video',
+        produitNom: produitNomFinal
+      });
+    } catch (errBuf) {
+      erreurBuffer = errBuf;
+    }
 
     // Journal intégrations (traçabilité complète)
     const LABEL_RESEAU = { facebook: 'Facebook', instagram: 'Instagram', pinterest: 'Pinterest' };
+
+    // DÉFAUT A (MICRO-13.2) — un ÉCHEC Buffer est journalisé avec le message
+    // et le code COMPLETS (reponseBrute masquée) puis renvoyé au dashboard
+    // avec une raison visible tronquée 200 car. (bannière + toast).
+    if (!outcome) {
+      const messageComplet = (erreurBuffer && erreurBuffer.message) || 'Erreur Buffer inconnue';
+      const raisonAffichee = tronquerRaison(messageComplet, LONGUEUR_RAISON_AFFICHEE);
+      const codeBuffer = (erreurBuffer && erreurBuffer.code) || 'BUFFER_ECHEC';
+      journaliserIntegration({
+        type: 'publication', integrateur: 'buffer', reseau: LABEL_RESEAU[platform],
+        produit: produitCles[0] || 'inconnu', produitNom: produitNomFinal,
+        statut: 'echec', httpStatus: (erreurBuffer && erreurBuffer.httpStatus) || null,
+        message: messageComplet,
+        cause: messageComplet,
+        code: codeBuffer,
+        reponseBrute: masquerReponseBrute(erreurBuffer && erreurBuffer.reponseBrute),
+        mediaUrl: finalMediaUrl, videoUrl: finalVideoUrl || undefined, mediaType,
+        mediaUrlPublique: finalVideoUrl || undefined,
+        videoFichier: videoFichier || undefined,
+        videoSha256: videoSha256 || undefined,
+        hashContenu: hashContenu(content), contenu: content,
+        channelIds: (erreurBuffer && erreurBuffer.channelId) ? [erreurBuffer.channelId] : undefined,
+        mode: 'customScheduled', integratorMode: 'buffer-cloud-schedule',
+        fileAttente: true, dueAtRetour: scheduledAtIso,
+        source: 'dashboard', raisonAffichee
+      });
+      try {
+        ajouterEntreeJournal({
+          id: `queue_${Date.now()}_${platform}_echec`,
+          date: new Date().toISOString(),
+          platform, content,
+          mediaUrl: finalMediaUrl,
+          source: 'dashboard',
+          produitId: produitIdEntree({ mediaUrl: finalMediaUrl }) || undefined,
+          isoUTC: scheduledAtIso,
+          videoUrl: finalVideoUrl || undefined,
+          mediaUrlPublique: finalVideoUrl || undefined,
+          videoFichier: videoFichier || undefined,
+          videoSha256: videoSha256 || undefined,
+          mediaType,
+          status: 'error',
+          scheduleDate: scheduledAtIso,
+          integrateur: 'buffer',
+          mode: 'buffer-cloud-schedule',
+          fileAttente: true,
+          dueAt: scheduledAtIso,
+          channelIds: (erreurBuffer && erreurBuffer.channelId) ? [erreurBuffer.channelId] : undefined,
+          error: messageComplet,
+          code: codeBuffer,
+          reason: raisonAffichee
+        });
+      } catch (e) {
+        console.warn(`[journal] programmation échec : ${e.message}`);
+      }
+      return res.json({
+        success: false,
+        error: messageComplet,
+        message: raisonAffichee,
+        raisonBuffer: raisonAffichee,
+        cause: messageComplet,
+        code: codeBuffer,
+        reseau: platform,
+        reHebergement: doitProposerRehebergement(messageComplet),
+        resultats: [{
+          reseau: platform, integrateur: 'buffer', succes: false, action: 'createPost',
+          message: messageComplet, cause: messageComplet, code: codeBuffer,
+          reponseBrute: masquerReponseBrute(erreurBuffer && erreurBuffer.reponseBrute)
+        }],
+        reseauxPublies: [], reseauxEchoues: [platform],
+        preControle, avertissements: preControle.avertissements || []
+      });
+    }
+
     journaliserIntegration({
       type: 'publication', integrateur: 'buffer', reseau: LABEL_RESEAU[platform],
       produit: produitCles[0] || 'inconnu', produitNom: produitNomFinal,
@@ -2089,6 +2326,8 @@ app.post('/api/social/schedule', async (req, res) => {
       dueAt: outcome.scheduledAt || outcome.dueAt,
       mode: 'buffer-cloud-schedule',
       mediaUrlEnvoyee: outcome.mediaUrl || null,
+      preControle,
+      avertissements: preControle.avertissements || [],
       mediaStable: outcome.mediaStable
         ? { slug: outcome.mediaStable.slug, chemin: outcome.mediaStable.cheminRelatif, sha256: outcome.mediaStable.shaStable, cree: outcome.mediaStable.cree }
         : undefined
@@ -2096,10 +2335,15 @@ app.post('/api/social/schedule', async (req, res) => {
   } catch (err) {
     // Erreur Buffer (quota, auth, etc.) OU garde-fou média stable → message
     // clair + code machine (MEDIA_STABLE_DESYNC / _ABSENT / _RANG_INCONNU…).
+    const messageComplet = err.message || 'Erreur lors de la programmation Buffer';
     res.json({
       success: false,
-      error: err.message || 'Erreur lors de la programmation Buffer',
+      error: messageComplet,
+      message: tronquerRaison(messageComplet, LONGUEUR_RAISON_AFFICHEE),
+      raisonBuffer: tronquerRaison(messageComplet, LONGUEUR_RAISON_AFFICHEE),
+      cause: messageComplet,
       code: err && err.code ? err.code : undefined,
+      reHebergement: doitProposerRehebergement(messageComplet),
       mediaStable: err && err.mediaStable ? err.mediaStable : undefined
     });
   }
