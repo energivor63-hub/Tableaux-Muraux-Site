@@ -75,7 +75,18 @@ import {
 } from '../registre/video-probe.mjs';
 // 🎬 MICRO-13 — watchdog vidéo : sélection journal + re-médiation editPost,
 // dépendances injectées (testable sans réseau).
-import { executerVideoWatch } from './video-watch.js';
+import { executerVideoWatch, selectionnerVideosFutures } from './video-watch.js';
+// 🛡️ MICRO-13.3 v2.1 — cache HEAD TTL 5 min par URL + dédoublonnage par
+// passage (anti-throttle kappa.lol). Logs : transitions + 1 synthèse/passage.
+import {
+  creerCacheMediaCheck,
+  creerVerificateurCache,
+  executerPassageMediaCheck,
+  normaliserUrlMedia,
+  TTL_MEDIA_CHECK_MS
+} from '../registre/media_check_cache.mjs';
+// 🔗 MICRO-13.3 v2.1 — cohérence URL champ == video-map == assets émis.
+import { verifierCoherenceUrlVideo } from '../registre/coherence_url.mjs';
 // 🖼️ MICRO-11v2-ter — médias stables : résolution DYNAMIQUE à l'envoi +
 // resynchronisation (hooks ajout/remplacement/édition). Jamais de carte périmée.
 import { resynchroniserStables, resumeResync, verifierMediasStables } from './medias-stables.js';
@@ -849,6 +860,37 @@ async function verifierMediaPublic(mediaUrl, fiche) {
   return verifierUrlMedia(url);
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// MICRO-13.3 v2.1 — CACHE HEAD PARTAGÉ (anti-throttle)
+//   1 HEAD par URL et par TTL (5 min), quel que soit le nombre de posts qui
+//   partagent cette URL. Les logs individuels sont muets par défaut
+//   (MEDIA_CHECK_VERBOSE=1 pour les réactiver) : seuls les CHANGEMENTS
+//   d'état et la synthèse de passage sont journalisés.
+// ─────────────────────────────────────────────────────────────────────────
+const MEDIA_CHECK_VERBOSE = process.env.MEDIA_CHECK_VERBOSE === '1';
+const cacheMediaCheck = creerCacheMediaCheck({
+  ttlMs: Number(process.env.MEDIA_CHECK_TTL_MS) || TTL_MEDIA_CHECK_MS
+});
+
+function journaliserMediaCheck(evt) {
+  if (!evt || !evt.message) return;
+  if (evt.type === 'transition') {
+    console.log(`[media-check] ${evt.message}`);
+    return;
+  }
+  if (evt.type === 'synthese') {
+    const detail = MEDIA_CHECK_VERBOSE ? ` (HEAD ${evt.head || 0}, cache ${evt.cache || 0})` : '';
+    console.log(`[media-check] ${evt.message}${detail}`);
+  }
+}
+
+/** Vérification HEAD unitaire adossée au cache (routes ponctuelles). */
+const verifierMediaAvecCache = creerVerificateurCache({
+  cache: cacheMediaCheck,
+  verifier: (url) => verifierUrlVideo(url),
+  journaliser: journaliserMediaCheck
+});
+
 /** URL VIDÉO PUBLIQUE (Buffer télécharge l'URL — localhost impossible).
  * Les MP4 vivent HORS dépôt (../videos, jamais sur GitHub Pages) : l'URL
  * publique est fournie par l'utilisateur (dashboard « URL vidéo publique »,
@@ -892,7 +934,7 @@ async function _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets) {
   // 1) HEAD d'abord : refuse les hébergeurs à HEAD malhonnête AVANT tout GET.
   try {
     const h = await fetch(url, { method: 'HEAD' });
-    console.log(`[media-check] HEAD ${url} → HTTP ${h.status} | content-length: ${h.headers.get('content-length') ?? '?'} | content-type: ${h.headers.get('content-type') || '?'}`);
+    if (MEDIA_CHECK_VERBOSE) console.log(`[media-check] HEAD ${url} → HTTP ${h.status} | content-length: ${h.headers.get('content-length') ?? '?'} | content-type: ${h.headers.get('content-type') || '?'}`);
     if (h.ok) {
       const typeHead = String(h.headers.get('content-type') || '').trim();
       if (typeHead && !typeVideoAccepte(typeHead)) {
@@ -913,13 +955,13 @@ async function _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets) {
     }
     // HEAD non-2xx ou sans Content-Length : non concluant → second contrôle.
   } catch (e) {
-    console.log(`[media-check] HEAD ${url} → ERREUR ${e.message} (second contrôle Range conservé)`);
+    if (MEDIA_CHECK_VERBOSE) console.log(`[media-check] HEAD ${url} → ERREUR ${e.message} (second contrôle Range conservé)`);
   }
   // 2) Range GET bytes=0-0 (contrôle conservé) : HTTP 200/206 + video/*.
   try {
     const r = await fetch(url, { method: 'GET', headers: { Range: 'bytes=0-0' } });
     const type = String((r.headers && r.headers.get('content-type')) || '').trim();
-    console.log(`[media-check] ${url} → HTTP ${r.status} | content-type: ${type || '?'} | hôte: ${hebergeur || 'non répertorié'}`);
+    if (MEDIA_CHECK_VERBOSE) console.log(`[media-check] ${url} → HTTP ${r.status} | content-type: ${type || '?'} | hôte: ${hebergeur || 'non répertorié'}`);
     if ((r.status === 200 || r.status === 206) && typeVideoAccepte(type)) {
       if (contentLength === null) {
         const plage = String((r.headers && r.headers.get('content-range')) || '');
@@ -931,7 +973,7 @@ async function _verifierVideoPubliqueBrut(videoUrl, tailleAttendueOctets) {
     }
     return { ok: false, url, contentLength, contentType: (/^video\//i.test(type) ? type : contentType), hebergeur, erreur: `Vidéo publique inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${url}` };
   } catch (e) {
-    console.log(`[media-check] ${url} → ERREUR ${e.message}`);
+    if (MEDIA_CHECK_VERBOSE) console.log(`[media-check] ${url} → ERREUR ${e.message}`);
     return { ok: false, url, contentLength, contentType, hebergeur, erreur: `Vidéo publique inaccessible (${e.message}) : ${url}` };
   }
 }
@@ -946,6 +988,26 @@ async function verifierVideoPublique(videoUrl, tailleAttendueOctets) {
     resultat.code = 'VIDEO_URL_MORTE';
   }
   return resultat;
+}
+
+/**
+ * MICRO-13.3 v2.1 — même contrôle, mais mutualisé : un SUCCÈS est mémorisé
+ * 5 min par URL (les 3 appels d'un triplet ne refont pas 3 HEAD). Un refus
+ * n'est JAMAIS mis en cache sous l'URL simple (une erreur de taille ne doit
+ * pas condamner l'URL pour le watchdog).
+ */
+async function verifierVideoPubliqueCache(videoUrl, tailleAttendueOctets) {
+  const cle = normaliserUrlMedia(videoUrl);
+  const enCache = cle ? cacheMediaCheck.lire(cle) : { frais: false };
+  if (enCache.frais) return enCache.etat;
+  const etat = await verifierVideoPublique(videoUrl, tailleAttendueOctets);
+  if (cle && etat && etat.ok === true) {
+    const info = cacheMediaCheck.enregistrer(cle, etat);
+    if (info.transition) {
+      journaliserMediaCheck({ type: 'transition', url: cle, transition: info.transition, message: `media-check : ${cle} ${info.transition}` });
+    }
+  }
+  return etat;
 }
 
 /**
@@ -1000,13 +1062,13 @@ async function verifierUrlMedia(cible) {
     const plage = String((r.headers && r.headers.get('content-range')) || '');
     const taillePlage = plage.match(/\/(\d+)\s*$/);
     const octets = taillePlage ? Number(taillePlage[1]) : (Number(r.headers.get('content-length')) || 0);
-    console.log(`[media-check] ${cible} → HTTP ${r.status} | content-type: ${type || '?'} | octets: ${octets || '?'}`);
+    if (MEDIA_CHECK_VERBOSE) console.log(`[media-check] ${cible} → HTTP ${r.status} | content-type: ${type || '?'} | octets: ${octets || '?'}`);
     if ((r.status === 200 || r.status === 206) && /^image\//i.test(type)) {
       return { ok: true, url: cible, httpStatus: r.status, contentType: type, octets };
     }
     return { ok: false, url: cible, erreur: `Média public inaccessible (HTTP ${r.status}${type ? `, content-type: ${type}` : ''}) : ${cible}` };
   } catch (e) {
-    console.log(`[media-check] ${cible} → ERREUR ${e.message}`);
+    if (MEDIA_CHECK_VERBOSE) console.log(`[media-check] ${cible} → ERREUR ${e.message}`);
     return { ok: false, url: cible, erreur: `Média public inaccessible (${e.message}) : ${cible}` };
   }
 }
@@ -1307,7 +1369,7 @@ async function executerPublication(body, ciblesForcees) {
       // videoTailleOctets (optionnel) : comparée au HEAD Content-Length quand
       // le dashboard la connaît (sinon seul « > 0 » est exigé).
       const tailleAttendue = Number(body.videoTailleOctets);
-      const verifVideo = await verifierVideoPublique(
+      const verifVideo = await verifierVideoPubliqueCache(
         videoUrlDemande,
         Number.isFinite(tailleAttendue) && tailleAttendue > 0 ? tailleAttendue : undefined
       );
@@ -1951,7 +2013,7 @@ app.get('/api/social/video-map', async (req, res) => {
       let sante = null;
       if (verifier && valeur && valeur.urlPublique) {
         try {
-          sante = await verifierUrlVideo(valeur.urlPublique);
+          sante = await verifierMediaAvecCache(valeur.urlPublique);
         } catch (e) {
           sante = { ok: false, cause: e.message, code: 'VIDEO_URL_MORTE' };
         }
@@ -1971,10 +2033,24 @@ app.get('/api/social/video-map', async (req, res) => {
  * re-téléversement ../videos (carte SHA) + editPost(id, assets video).
  * GET accepte ?dryRun=1 (aucune mutation).
  */
-async function lancerVideoWatch(dryRun = false) {
-  return executerVideoWatch({
-    journal: lireJournalComplet(),
-    verifierUrl: (url) => verifierUrlVideo(url),
+async function lancerVideoWatch(dryRun = false, { depuisCache = false } = {}) {
+  const journal = lireJournalComplet();
+  const candidats = selectionnerVideosFutures(journal, Date.now());
+  // 1 PASSAGE = 1 contrôle par URL DISTINCTE (les 3 réseaux d'un MP4 = 1 HEAD),
+  // puis cache TTL 5 min. `depuisCache` : zéro requête réseau (badge).
+  const urls = candidats.map((e) => String(e.mediaUrlPublique || e.videoUrl || '').trim()).filter(Boolean);
+  const passage = await executerPassageMediaCheck(urls, {
+    cache: cacheMediaCheck,
+    verifier: (url) => verifierUrlVideo(url),
+    journaliser: journaliserMediaCheck,
+    depuisCache
+  });
+  const resultat = await executerVideoWatch({
+    journal,
+    verifierUrl: (url) => {
+      const etat = passage.etats.get(normaliserUrlMedia(url));
+      return etat || { ok: null, url, code: 'MEDIA_CHECK_NON_VERIFIEE' };
+    },
     upload: ({ cheminFichier, slug }) => obtenirUrlVideoPublique({ cheminFichier, slug }),
     editPost: ({ postId, videoUrl, thumbnailUrl, titreVideo }) =>
       remesierPostMediaVideo({ postId, videoUrl, thumbnailUrl, titreVideo }),
@@ -1984,11 +2060,21 @@ async function lancerVideoWatch(dryRun = false) {
     slugVideoDepuisFichier,
     dryRun
   });
+  return {
+    ...resultat,
+    // Traçabilité anti-throttle (rapport + tests) : 1 HEAD par URL distincte.
+    urlsControlees: passage.urls,
+    headEffectues: passage.head,
+    cacheHits: passage.cache,
+    depuisCache: passage.depuisCache,
+    synthese: passage.synthese
+  };
 }
 
 app.get('/api/social/video-watch', async (req, res) => {
   try {
-    res.json(await lancerVideoWatch(String(req.query.dryRun || '') === '1'));
+    const depuisCache = String(req.query.cache || '') === '1';
+    res.json(await lancerVideoWatch(String(req.query.dryRun || '') === '1', { depuisCache }));
   } catch (err) {
     res.json({ success: false, error: err.message, resultats: [] });
   }
@@ -2013,7 +2099,7 @@ app.get('/api/social/verifier-video', async (req, res) => {
   try {
     const url = String(req.query.url || '').trim();
     const taille = Number(req.query.tailleAttendue);
-    const v = await verifierVideoPublique(url, Number.isFinite(taille) && taille > 0 ? taille : undefined);
+    const v = await verifierVideoPubliqueCache(url, Number.isFinite(taille) && taille > 0 ? taille : undefined);
     res.type('application/json').json({
       ok: v.ok === true,
       cause: v.ok ? null : (v.erreur || 'Vérification impossible'),
@@ -2150,9 +2236,10 @@ app.post('/api/social/schedule', async (req, res) => {
     // Vérifier média public AVANT envoi (même logique que /api/social/publish)
     let finalMediaUrl = mediaUrl;
     let finalVideoUrl = null;
+    let coherenceUrl = null;
     if (mediaType === 'video') {
       const tailleAttendue = Number(req.body.videoTailleOctets);
-      const verifVideo = await verifierVideoPublique(
+      const verifVideo = await verifierVideoPubliqueCache(
         videoUrlDemande,
         Number.isFinite(tailleAttendue) && tailleAttendue > 0 ? tailleAttendue : undefined
       );
@@ -2160,6 +2247,50 @@ app.post('/api/social/schedule', async (req, res) => {
         return res.json({ success: false, error: verifVideo.erreur, code: verifVideo.code || 'VIDEO_URL_MORTE' });
       }
       finalVideoUrl = verifVideo.url;
+      // 🔗 MICRO-13.3 v2.1 — cohérence URL : champ == video-map == assets
+      // émis (même URL pour les 3 réseaux). Divergence = alerte explicite,
+      // 0 mutation. Une carte absente (URL manuelle) alerte sans bloquer.
+      coherenceUrl = verifierCoherenceUrlVideo({
+        urlChamp: videoUrlDemande,
+        videoMap: lireVideoMap(VIDEO_MAP_PATH),
+        slug: videoFichier ? slugVideoDepuisFichier(videoFichier) : null,
+        produitId,
+        // La route est appelée une fois PAR réseau avec la même URL : on
+        // matérialise les 3 assets émis (FB, IG, PIN) pour l'assert.
+        urlAssets: [
+          finalVideoUrl || videoUrlDemande,
+          finalVideoUrl || videoUrlDemande,
+          finalVideoUrl || videoUrlDemande
+        ]
+      });
+      if (!coherenceUrl.ok) {
+        journaliserIntegration({
+          type: 'coherence-url', integrateur: 'local', reseau: platform,
+          produit: produitId || 'inconnu', produitNom: produitNomFinal,
+          statut: 'echec', code: 'COHERENCE_URL_DIVERGENTE',
+          message: coherenceUrl.message,
+          mediaType, videoUrl: videoUrlDemande || undefined,
+          videoFichier: videoFichier || undefined
+        });
+        return res.json({
+          success: false,
+          code: 'COHERENCE_URL_DIVERGENTE',
+          error: coherenceUrl.message,
+          message: coherenceUrl.message,
+          coherenceUrl,
+          dueAt: scheduledAtIso,
+          dueAtAffichage
+        });
+      }
+      if (coherenceUrl.divergences.length) {
+        journaliserIntegration({
+          type: 'coherence-url', integrateur: 'local', reseau: platform,
+          produit: produitId || 'inconnu', produitNom: produitNomFinal,
+          statut: 'avertissement', message: coherenceUrl.message,
+          mediaType, videoUrl: videoUrlDemande || undefined,
+          videoFichier: videoFichier || undefined
+        });
+      }
     } else {
       const verifMedia = await verifierMediaPublic(mediaUrl, fiche);
       if (!verifMedia.ok) {
@@ -2313,6 +2444,9 @@ app.post('/api/social/schedule', async (req, res) => {
       fileAttente: true,
       dueAtRetour: outcome.scheduledAt || outcome.dueAt || null,
       dueAtAffichage: formaterDueAtCasablanca(outcome.scheduledAt || outcome.dueAt || scheduledAtIso),
+      coherenceUrl: coherenceUrl
+        ? { ok: coherenceUrl.ok, champ: coherenceUrl.champ, videoMap: coherenceUrl.videoMap, assets: coherenceUrl.assets, divergences: coherenceUrl.divergences, postId: outcome.postId || null }
+        : undefined,
       board: outcome.board ? { id: outcome.board.id, name: outcome.board.name, serviceId: outcome.board.serviceId, url: outcome.board.url } : undefined,
       scheduledAt: outcome.scheduledAt || outcome.dueAt || null
     });
@@ -2365,6 +2499,9 @@ app.post('/api/social/schedule', async (req, res) => {
       dueAt: dueAtFinal,
       dueAtAffichage: formaterDueAtCasablanca(dueAtFinal),
       dueAtUtc: formaterHeureDoubleCasablanca(dueAtFinal).split(' = ')[1],
+      coherenceUrl: coherenceUrl
+        ? { ok: coherenceUrl.ok, champ: coherenceUrl.champ, videoMap: coherenceUrl.videoMap, assets: coherenceUrl.assets, divergences: coherenceUrl.divergences, postId: outcome.postId || null }
+        : undefined,
       mode: 'buffer-cloud-schedule',
       mediaUrlEnvoyee: outcome.mediaUrl || null,
       preControle,
@@ -2924,4 +3061,44 @@ app.listen(PORT, process.env.HOST || '127.0.0.1', () => {
   console.log(`?? FICHIER .ENV     : ${ROOT_ENV_FILE} (${hasApiKeyConfigured() ? 'CONFIGUR?E ?' : 'NON D?FINIE ? (Ajoutez GROQ_API_KEY dans .env)'})`);
   console.log(`?? SCRIPT PYTHON    : ${PYTHON_SCRIPT} (${fs.existsSync(PYTHON_SCRIPT) ? 'TROUV? ?' : 'NON TROUV? ?'})`);
   console.log(`================================================================\n`);
+  demarrerPollingVideoWatch();
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// MICRO-13.3 v2.1 — POLLING WATCHDOG : 1 passage au démarrage puis
+// intervalle ≥ 15 min (VIDEO_WATCH_POLL_MS peut l'allonger, jamais le
+// raccourcir). Passage en DRY-RUN : il alimente le cache et le badge sans
+// mutation ; la re-médiation reste une action explicite du dashboard.
+// Désactivé sur les instances de test (PORT surcharge) et via
+// VIDEO_WATCH_POLL=0.
+// ─────────────────────────────────────────────────────────────────────────
+const VIDEO_WATCH_POLL_MIN_MS = 15 * 60 * 1000;
+const VIDEO_WATCH_POLL_MS = Math.max(
+  VIDEO_WATCH_POLL_MIN_MS,
+  Number(process.env.VIDEO_WATCH_POLL_MS) || VIDEO_WATCH_POLL_MIN_MS
+);
+
+function demarrerPollingVideoWatch() {
+  if (process.env.VIDEO_WATCH_POLL === '0' || process.env.PORT) {
+    console.log('[media-check] polling watchdog désactivé (instance de test ou VIDEO_WATCH_POLL=0).');
+    return null;
+  }
+  let enCours = false;
+  const passage = async () => {
+    if (enCours) return;
+    enCours = true;
+    try {
+      await lancerVideoWatch(true);
+    } catch (e) {
+      console.warn(`[media-check] passage watchdog en échec : ${e.message}`);
+    } finally {
+      enCours = false;
+    }
+  };
+  // 1 seul passage au démarrage (après stabilisation du serveur).
+  setTimeout(passage, 3000);
+  const minuteur = setInterval(passage, VIDEO_WATCH_POLL_MS);
+  if (typeof minuteur.unref === 'function') minuteur.unref();
+  console.log(`[media-check] polling watchdog : démarrage + toutes les ${Math.round(VIDEO_WATCH_POLL_MS / 60000)} min (cache TTL ${Math.round(cacheMediaCheck.ttlMs / 60000)} min).`);
+  return minuteur;
+}

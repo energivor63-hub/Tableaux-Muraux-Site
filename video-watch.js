@@ -76,6 +76,11 @@ export async function executerVideoWatch({
   const candidats = selectionnerVideosFutures(journal, now);
   const resultats = [];
 
+  // MICRO-13.3 v2.1 — DÉDOUBLONNAGE PAR PASSAGE : plusieurs posts partagent
+  // la même URL vidéo (3 réseaux pour un MP4) → un seul contrôle par URL.
+  const etatsPassage = new Map(); // url -> { ok, cause, ... }
+  let appelsVerification = 0;
+
   for (const entree of candidats) {
     const postId = String(entree.postId);
     const urlPublique = String(entree.mediaUrlPublique || entree.videoUrl || '').trim();
@@ -84,11 +89,28 @@ export async function executerVideoWatch({
 
     let etatUrl = null;
     if (urlPublique) {
-      try {
-        etatUrl = await verifierUrl(urlPublique);
-      } catch (e) {
-        etatUrl = { ok: false, cause: e.message, code: 'VIDEO_URL_MORTE' };
+      if (etatsPassage.has(urlPublique)) {
+        etatUrl = etatsPassage.get(urlPublique);
+      } else {
+        appelsVerification++;
+        try {
+          etatUrl = await verifierUrl(urlPublique);
+        } catch (e) {
+          etatUrl = { ok: false, cause: e.message, code: 'VIDEO_URL_MORTE' };
+        }
+        etatsPassage.set(urlPublique, etatUrl);
       }
+    }
+    // État INCONNU (cache vide, badge sans HEAD) : jamais de re-médiation —
+    // une absence de contrôle n'est pas une URL morte.
+    if (etatUrl && etatUrl.ok === null) {
+      resultats.push({
+        postId, produitId, urlPublique, statut: 'inconnue',
+        code: etatUrl.code || 'MEDIA_CHECK_NON_VERIFIEE',
+        cause: etatUrl.cause || 'aucun contrôle récent (cache)',
+        dueAt: entree.dueAt || entree.isoUTC || null
+      });
+      continue;
     }
     const urlVivante = !!(etatUrl && etatUrl.ok);
 
@@ -177,7 +199,11 @@ export async function executerVideoWatch({
     date: new Date().toISOString(),
     dryRun,
     total: candidats.length,
+    // Compteurs anti-throttle : URLs distinctes vs contrôles réellement émis.
+    urlsDistinctes: etatsPassage.size,
+    appelsVerification,
     vivantes: resultats.filter((r) => r.statut === 'vivante').length,
+    inconnues: resultats.filter((r) => r.statut === 'inconnue').length,
     remesiees: resultats.filter((r) => r.statut === 'remesie').length,
     aRemesier: resultats.filter((r) => r.statut === 'a_remesier').length,
     echecs: resultats.filter((r) => r.statut === 'echec').length,
