@@ -8,9 +8,9 @@
     <meta property="og:url" content="https://energivor63-hub.github.io/Tableaux-Muraux-Site/">
     <meta property="og:title" content="Tableaux Muraux - Art Mural Premium">
     <meta property="og:description" content="Tableaux muraux artisanaux co-créés par IA et fabriqués à la main à Marrakech. haute définition et Canvas premium.">
-    <meta property="og:image" content="https://energivor63-hub.github.io/Tableaux-Muraux-Site/images/produit-19.png">
-    <meta property="og:image:width" content="1200">
-    <meta property="og:image:height" content="630">
+    <meta property="og:image" content="https://energivor63-hub.github.io/Tableaux-Muraux-Site/images/produit-19.jpg">
+    <meta property="og:image:width" content="1254">
+    <meta property="og:image:height" content="1254">
     <meta property="og:locale" content="fr_FR">
     <meta property="og:site_name" content="Tableaux Muraux">
     
@@ -19,7 +19,7 @@
     <meta name="twitter:url" content="https://energivor63-hub.github.io/Tableaux-Muraux-Site/">
     <meta name="twitter:title" content="Tableaux Muraux - Art Mural Premium">
     <meta name="twitter:description" content="Tableaux muraux artisanaux co-créés par IA et fabriqués à la main à Marrakech.">
-    <meta name="twitter:image" content="https://energivor63-hub.github.io/Tableaux-Muraux-Site/images/produit-19.png">
+    <meta name="twitter:image" content="https://energivor63-hub.github.io/Tableaux-Muraux-Site/images/produit-19.jpg">
 
     <!-- Pinterest -->
     <meta name="pinterest" content="nopin" description="Tableaux muraux artisanaux - Marrakech">
@@ -525,7 +525,6 @@
                 <li><a href="#montage" data-contenu="nav.linkMontage">Finitions</a></li>
                 <li><a href="#gallery" data-contenu="nav.linkGallery">Galerie</a></li>
                 <li><a href="#testimonials" data-contenu="nav.linkTestimonials">Avis</a></li>
-                <li><a href="tour-de-controle.html" style="color: var(--primary); font-weight: 600; display: inline-flex; align-items: center; gap: 0.3rem;" title="Tour de contrôle - Intégration des produits"><span>🗼</span> Tour de Contrôle</a></li>
                 <li><a href="#contact" class="btn-nav" data-contenu="nav.btnOrder">Commander</a></li>
             </ul>
             <button class="mobile-menu" id="mobile-menu">☰</button>
@@ -705,9 +704,9 @@
     <section class="testimonials-section" id="testimonials">
         <div class="container">
             <div class="section-header">
-                <span class="section-tag" data-contenu="testimonials.sectionTag">Témoignages</span>
-                <h2 data-contenu="testimonials.sectionTitle">Ce que disent nos clients</h2>
-                <p data-contenu="testimonials.sectionDesc">Des clients satisfaits à Marrakech et partout au Maroc</p>
+                <span class="section-tag" data-contenu="testimonials.sectionTag">Lancement</span>
+                <h2 data-contenu="testimonials.sectionTitle">Les premiers retours</h2>
+                <p data-contenu="testimonials.sectionDesc">Nous ne publions que des avis vérifiés. Ils apparaîtront ici au fil des livraisons.</p>
             </div>
             <div class="testimonials-grid" id="testimonials-grid"></div>
         </div>
@@ -726,6 +725,9 @@
                     <h3 data-contenu="contact.infoTitle">Parlons de votre projet</h3>
                     <p data-contenu="contact.infoDesc">Que vous ayez une idée précise ou besoin de conseils, nous sommes là pour vous accompagner dans la création de votre tableau idéal. Réponse garantie en moins de 24 heures !</p>
                     <div class="contact-methods" id="contact-methods"></div>
+                    <p style="margin-top:1.2rem;font-size:0.9rem;color:var(--gray);">
+                        Prix à l'atelier, Marrakech · Livraison convenue à la commande · Paiement à la réception
+                    </p>
                 </div>
                 <div class="contact-visual">
                     <div class="contact-visual-image" id="commander-image"></div>
@@ -785,7 +787,6 @@
             </div>
             <div class="footer-bottom" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                 <p>&copy; 2026 <span id="footer-marque"></span>. Tous droits réservés. | Co-créé par IA 🤖 et fabriqué à la main à Marrakech 🇲🇦</p>
-                <a href="social.html" style="opacity: 0.45; font-size: 0.8em; color: rgba(255,255,255,0.7); text-decoration: none;" title="Administration Social Media" data-contenu="footer.socialStudioLink">Social Studio</a>
             </div>
         </div>
     </footer>
@@ -1177,7 +1178,23 @@
     });
 
     // ═══ TESTIMONIALS ═══
-    document.getElementById('testimonials-grid').innerHTML = CONTENU_SITE.temoignages.map(t => `
+    // ⚠️ Aucun avis inventé : si la liste est vide (phase de lancement), on
+    //     affiche un message honnête plutôt qu'une grille vide ou de faux avis.
+    const avisClients = Array.isArray(CONTENU_SITE.temoignages) ? CONTENU_SITE.temoignages : [];
+    const grilleAvis = document.getElementById('testimonials-grid');
+    if (avisClients.length === 0) {
+        grilleAvis.innerHTML = `
+        <div class="testimonial-card" style="text-align:center;max-width:640px;margin:0 auto;">
+            <p class="testimonial-text">Nous préférons ne rien inventer : les premiers avis seront publiés dès les premières livraisons, avec l'accord de leurs auteurs.</p>
+            <div class="testimonial-author" style="justify-content:center;">
+                <div class="author-info" style="text-align:center;">
+                    <h5>Atelier de Marrakech</h5>
+                    <span>Premières commandes en cours</span>
+                </div>
+            </div>
+        </div>`;
+    } else {
+        grilleAvis.innerHTML = avisClients.map(t => `
         <div class="testimonial-card">
             <div class="stars">${'★'.repeat(t.note)}${'☆'.repeat(5 - t.note)}</div>
             <p class="testimonial-text">${t.texte}</p>
@@ -1190,6 +1207,7 @@
             </div>
         </div>
     `).join('');
+    }
 
     // ═══ CONTACT METHODS ═══
     const reseaux = CONTENU_SITE.reseaux;

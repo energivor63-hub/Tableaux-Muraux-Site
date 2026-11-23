@@ -280,7 +280,7 @@ const SITE_CONFIG = {
                 category: "abstrait",
                 style: "contemporain",
                 environment: "salon",
-                image: "images/produit-19.png",
+                image: "images/produit-19.jpg",
                 badge: "Nouveau",
                 price: "À partir de xxxx MAD",
                 material: "bâche premium",
@@ -309,41 +309,15 @@ const SITE_CONFIG = {
 
     // ========================================
     // TÉMOIGNAGES
+    // Fichier de référence (non chargé par les pages).
+    // Les avis sont gérés dans contenu.js → temoignages[].
+    // Aucun avis inventé : n'ajouter que des avis réels et vérifiables.
     // ========================================
     testimonials: {
-        sectionTag: "Témoignages",
-        title: "Ce que disent nos clients",
-        subtitle: "Des clients satisfaits à Marrakech et partout au Maroc",
-        items: [
-            {
-                stars: 5,
-                text: "Un tableau magnifique qui a complètement transformé mon salon. La qualité d'impression sur haute définition est exceptionnelle, les couleurs sont vibrantes !",
-                author: "Sarah A.",
-                location: "Marrakech",
-                initials: "SA"
-            },
-            {
-                stars: 5,
-                text: "J'adore le concept de co-création IA + artisanat. Le cadre en bois est superbe et le service client via WhatsApp est très réactif. Je recommande !",
-                author: "Karim M.",
-                location: "Casablanca",
-                initials: "KM"
-            },
-            {
-                stars: 5,
-                text: "Offert en cadeau à ma mère, elle a adoré ! Le tableau sur canvas a un rendu vraiment authentique. Livraison rapide et emballage soigné.",
-                author: "Fatima B.",
-                location: "Rabat",
-                initials: "FB"
-            },
-            {
-                stars: 5,
-                text: "Excellent travail ! Le tableau reflète parfaitement l'ambiance que je recherchais pour mon riad. Les dimensions personnalisées s'intègrent parfaitement dans l'architecture traditionnelle.",
-                author: "Youssef M.",
-                location: "Marrakech",
-                initials: "YM"
-            }
-        ]
+        sectionTag: "Lancement",
+        title: "Les premiers retours",
+        subtitle: "Nous ne publions que des avis vérifiés.",
+        items: []
     },
 
     // ========================================

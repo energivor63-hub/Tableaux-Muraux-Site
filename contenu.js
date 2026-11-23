@@ -384,7 +384,7 @@ const CONTENU_SITE = {
       montageRecommande: "Cadre Américain",
       couleurs: ["Vert Émeraude", "Doré", "Beige", "Noir"],
       ambiance: "Opulente, surréaliste et luxueuse",
-      panneaux: 1,
+      panneaux: 3,
     },
     {
       nom: "Lumière Sacrée de la Gloire Divine",
@@ -647,7 +647,7 @@ const CONTENU_SITE = {
     },
     {
       nom: "Lumière Sacrée de l'Éden",
-      description: "Calligraphie arabe noire d'une fluidité majestueuse posée sur un fond de feuilles d'or et de reliefs de crème. La texture épaisse et brillante capture la lumière pour une profondeur spirituelle et luxueuse.",
+      description: "Triptyque — Calligraphie arabe noire d'une fluidité majestueuse posée sur un fond de feuilles d'or et de reliefs de crème. La texture épaisse et brillante capture la lumière pour une profondeur spirituelle et luxueuse.",
       categorie: "calligraphie",
       style: "traditionnel",
       environnement: "salon",
@@ -659,11 +659,11 @@ const CONTENU_SITE = {
       montageRecommande: "Châssis Bois",
       couleurs: ["Or", "Crème", "Noir", "Beige"],
       ambiance: "Sacrée, luxueuse et rayonnante",
-      panneaux: 1,
+      panneaux: 3,
     },
     {
       nom: "Lumière Sacrée de l'Alléluia",
-      description: "Calligraphie arabe noire en style thuluth majestueux sur un fond de marbre crème texturé. Des éclats de feuille d'or véritable créent un halo lumineux et spirituel autour des mots sacrés.",
+      description: "Triptyque — Calligraphie arabe noire en style thuluth majestueux sur un fond de marbre crème texturé. Des éclats de feuille d'or véritable créent un halo lumineux et spirituel autour des mots sacrés.",
       categorie: "calligraphie",
       style: "traditionnel",
       environnement: "salon",
@@ -675,7 +675,7 @@ const CONTENU_SITE = {
       montageRecommande: "Châssis Bois",
       couleurs: ["Noir", "Crème", "Doré", "Beige"],
       ambiance: "Divine, luxueuse et apaisante",
-      panneaux: 1,
+      panneaux: 3,
     },
     {
       nom: "L'Éclat de la Révélation",
@@ -1124,36 +1124,13 @@ const CONTENU_SITE = {
   // ─────────────────────────────────────────────────────────────
   // ⭐ TÉMOIGNAGES CLIENTS
   // ─────────────────────────────────────────────────────────────
-  temoignages: [
-    {
-      initiales: "SA",
-      nom: "Sarah A.",
-      ville: "Marrakech",
-      texte: "Un tableau magnifique qui a complètement transformé mon salon. La qualité d'impression sur haute définition est exceptionnelle, les couleurs sont vibrantes ! J'ai opté pour le cadre américain flottant, c'est d'une élégance rare.",
-      note: 5
-    },
-    {
-      initiales: "KM",
-      nom: "Karim M.",
-      ville: "Marrakech",
-      texte: "J'adore le concept de co-création IA + artisanat. Le cadre en bois est superbe et le service client via WhatsApp est très réactif. J'ai commandé un format sur mesure 80×120 cm, parfait pour mon mur !",
-      note: 5
-    },
-    {
-      initiales: "FB",
-      nom: "Fatima B.",
-      ville: "Marrakech",
-      texte: "Offert en cadeau à ma mère, elle a adoré ! Le tableau sur canvas tendu a un rendu vraiment authentique, digne d'une galerie d'art. Livraison rapide et emballage soigné.",
-      note: 5
-    },
-    {
-      initiales: "YM",
-      nom: "Youssef M.",
-      ville: "Marrakech",
-      texte: "Excellent travail ! Le tableau reflète parfaitement l'ambiance que je recherchais pour mon riad. Les dimensions personnalisées s'intègrent parfaitement dans l'architecture traditionnelle.",
-      note: 5
-    }
-  ],
+  // ⚠️ VIDÉ VOLONTAIREMENT le 22/11/2026 : les 4 témoignages précédents
+  //    n'étaient pas vérifiables (aucun client identifié, aucune date).
+  //    Règle : n'ajouter ici QUE des avis réels, avec l'accord du client,
+  //    de préférence accompagnés d'une photo du tableau installé.
+  //    Tant que la liste est vide, index.html affiche un message de lancement
+  //    honnête à la place de la grille d'avis.
+  temoignages: [],
 
   // ─────────────────────────────────────────────────────────────
   // 📱 RÉSEAUX SOCIAUX
@@ -1192,7 +1169,7 @@ const CONTENU_SITE = {
   // ─────────────────────────────────────────────────────────────
   // 📄 CONTENU DÉTAILLÉ DES PAGES INTERNES (ÉDITABLE ICI)
   // ─────────────────────────────────────────────────────────────
-  // Pilote automatiquement materials.html, process.html, privacy.html, social.html
+  // Pilote automatiquement materials.html, process.html et privacy.html
   // ─────────────────────────────────────────────────────────────
   pages: {
 
@@ -1333,8 +1310,7 @@ const CONTENU_SITE = {
         brandName: "Tableaux",
         brandExtension: " Muraux",
         desc: "Art mural artisanal, co-créé par IA et fabriqué à la main à Marrakech",
-        copyright: "© 2026 Tableaux Muraux. Tous droits réservés.",
-        socialStudioLink: "Social Studio"
+        copyright: "© 2026 Tableaux Muraux. Tous droits réservés."
       }
     },
 
@@ -1417,11 +1393,15 @@ const CONTENU_SITE = {
           "Nous ne négligeons pas le service après-vente"
         ]
       },
+      // ⚠️ Aucun compteur saisi à la main : stat1 (nombre d'œuvres) est dérivé
+      //    de produits.length juste après la définition de CONTENU_SITE (fin de
+      //    fichier). Les autres entrées sont des faits qualitatifs, pas des
+      //    compteurs susceptibles de devenir faux à la prochaine insertion.
       stats: {
-        stat1: { value: "100%", label: "Artisanat marocain pour les cadres" },
-        stat2: { value: "50+", label: "Créations uniques réalisées" },
-        stat3: { value: "⭐ 5/5", label: "Satisfaction client" },
-        stat4: { value: "72h", label: "Délai de production moyen" }
+        stat1: { value: "", label: "Œuvres au catalogue" },
+        stat2: { value: "Bâche & canvas", label: "Deux supports au choix" },
+        stat3: { value: "Fait main", label: "Cadres bois fabriqués à l'atelier" },
+        stat4: { value: "Marrakech", label: "Atelier et livraison locale" }
       },
       cta: {
         title: "Prêt à créer votre tableau unique ?",
@@ -1434,8 +1414,7 @@ const CONTENU_SITE = {
         brandName: "Tableaux",
         brandExtension: " Muraux",
         desc: "Art mural artisanal, co-créé par IA et fabriqué à la main à Marrakech",
-        copyright: "© 2026 Tableaux Muraux. Tous droits réservés.",
-        socialStudioLink: "Social Studio"
+        copyright: "© 2026 Tableaux Muraux. Tous droits réservés."
       }
     },
 
@@ -1563,104 +1542,9 @@ const CONTENU_SITE = {
       },
       footer: {
         copyright: "© 2026 Tableaux Muraux - Art mural artisanal co-créé par IA",
-        tagline: "Conçu et fabriqué avec ❤️ à Marrakech",
-        socialStudioLink: "Social Studio"
+        tagline: "Conçu et fabriqué avec ❤️ à Marrakech"
       }
     },
-
-    // ═══════════════════════════════════════════════════════════
-    // 4. PAGE SOCIAL STUDIO (social.html)
-    // ═══════════════════════════════════════════════════════════
-    social: {
-      meta: {
-        title: "Social Media Studio | Tableaux Muraux",
-        description: "Module de gestion éditoriale et de publication réseaux sociaux pour Tableaux Muraux."
-      },
-      header: {
-        brandName: "Tableaux",
-        brandExtension: " Muraux",
-        moduleName: "Social Media Studio",
-        statusBadge: "Mode Local"
-      },
-      sidebar: {
-        title: "Social Studio",
-        subtitle: "Tableaux Muraux v3.1",
-        tabs: {
-          dashboard: "Tableau de bord",
-          accounts: "Comptes Réseaux",
-          composer: "Créateur de Post",
-          calendar: "Calendrier",
-          media: "Médiathèque",
-          posts: "Publications",
-          analytics: "Analytique"
-        }
-      },
-      dashboard: {
-        title: "Vue d'ensemble",
-        subtitle: "Performances globales et prochaines parutions",
-        btnNewPost: "+ Nouveau Post",
-        upcomingTitle: "⏳ Prochaines publications programmées"
-      },
-      accounts: {
-        title: "Comptes Réseaux Sociaux",
-        subtitle: "Statut des connexions et synchronisation simulée",
-        btnSyncAll: "🔄 Tout synchroniser"
-      },
-      composer: {
-        title: "Composer une Publication",
-        subtitle: "Rédigez, choisissez vos visuels et visualisez l'aperçu en temps réel",
-        targetPlatformsLabel: "Réseaux cibles",
-        titleLabel: "Titre de travail / Objet interne",
-        titlePlaceholder: "Ex: Focus Collection Patio...",
-        imageLabel: "Visuel associé",
-        galleryHelper: "Ou cliquez directement sur un produit de la galerie",
-        textLabel: "Texte de la publication",
-        textPlaceholder: "Rédigez la légende de votre publication...",
-        hashtagsLabel: "Suggestions de Hashtags",
-        dateLabel: "Date & Heure de planification",
-        btnDraft: "💾 Enregistrer Brouillon",
-        btnSchedule: "⏰ Programmer",
-        btnPublish: "🚀 Publier Immédiatement",
-        previewTitle: "Aperçu en temps réel",
-        previewDefaultText: "Votre texte apparaîtra ici en temps réel..."
-      },
-      calendar: {
-        title: "Calendrier Éditorial",
-        subtitle: "Planning mensuel des publications prévues",
-        btnPrev: "◀ Précédent",
-        btnNext: "Suivant ▶",
-        days: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
-      },
-      media: {
-        title: "Médiathèque Visuelle",
-        subtitle: "Catalogue de créations et visuels d'atelier disponibles",
-        filterAll: "Tous les médias",
-        filterCatalogue: "Catalogue Produits",
-        filterAtelier: "Atelier & Coulisses",
-        filterAmbiance: "Ambiances"
-      },
-      posts: {
-        title: "Historique des Publications",
-        subtitle: "Brouillons, parutions actives et programmées",
-        filterAll: "Tous les statuts",
-        filterPublished: "Publiés",
-        filterScheduled: "Programmés",
-        filterDraft: "Brouillons"
-      },
-      analytics: {
-        title: "Analytique des Publications",
-        subtitle: "Performance moyenne par format et meilleurs créneaux horaires",
-        bestHoursTitle: "🕒 Meilleurs créneaux de publication",
-        topPostsTitle: "🏆 Top 3 des publications les plus engageantes"
-      },
-      footer: {
-        brandName: "Tableaux",
-        brandExtension: " Muraux",
-        desc: "Module de gestion sociale Tableaux Muraux Marrakech",
-        copyright: "© 2026 Tableaux Muraux. Tous droits réservés.",
-        secretLink: "Social Studio"
-      }
-    }
   }
 };
 
@@ -1670,5 +1554,16 @@ if (typeof window !== 'undefined') {
 }
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = CONTENU_SITE;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 📊 STATISTIQUES DÉRIVÉES — jamais saisies à la main
+// Le nombre d'œuvres suit le catalogue : il ne peut pas devenir faux
+// à la 54ᵉ insertion. Toute stat chiffrée doit passer par ici.
+// ─────────────────────────────────────────────────────────────
+if (typeof CONTENU_SITE !== 'undefined' && CONTENU_SITE.pages &&
+    CONTENU_SITE.pages.process && CONTENU_SITE.pages.process.stats) {
+  var statsProcess = CONTENU_SITE.pages.process.stats;
+  if (statsProcess.stat1) statsProcess.stat1.value = String(CONTENU_SITE.produits.length);
 }
 

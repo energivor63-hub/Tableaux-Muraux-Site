@@ -1,4 +1,4 @@
-﻿# 🌐 SITE WEB - Documentation
+# 🌐 SITE WEB - Documentation
 
 ## Présentation
 
@@ -322,37 +322,22 @@ Voir la section **Personnalisation → Modifier les images des sections** ci-des
 
 ---
 
-## 📱 Module Social Studio (gestion réseaux sociaux)
+## 📱 Module Social Studio — SUPPRIMÉ
 
-Un module statique de gestion des réseaux sociaux (Facebook, Instagram, Pinterest) a été ajouté au projet.
+Le module statique `social.html` + `social-data.js` + `social-app.js` + `social.css`
+a été **supprimé du dépôt le 23/11/2026**.
 
-### Architecture
+Motif : la page était publique, indexable et affichait des statistiques inventées
+(4 280 / 8 650 / 12 400 abonnés, portée 148 200) alors que l'audience réelle était
+quasi nulle. Aucune API n'y était connectée : c'était une maquette.
 
-| Fichier | Rôle |
-|---------|------|
-| **`social-data.js`** | ⭐ Source unique des données fictives (comptes, publications, statistiques, médiathèque) |
-| `social.html` | Page principale du Social Studio (à créer) |
-| `social.css` | Styles du module (à créer) |
-| `social-app.js` | Contrôleur d'interface UI (à créer) |
+La gestion réelle des réseaux sociaux se fait dans **`dashboard/`** (outil local,
+non publié) et via l'API Buffer du serveur local. Les fichiers supprimés restent
+récupérables dans l'historique Git.
 
-### Décisions de conception
-
-- ✅ **Lien discret dans le footer uniquement** (pas dans la navbar publique)
-- ✅ **Persistance via `localStorage`** (les créations de test sont conservées entre les sessions)
-- ✅ **Interface en français** (cohérent avec le reste du site)
-- ✅ **Accessibilité WCAG AA** (navigation clavier, ARIA, contrastes)
-- ✅ **Mobile-first** pour le calendrier et l'éditeur de publication
-
-### Données fictives
-
-Les comptes simulés utilisent la nouvelle identité visuelle :
-- Instagram : `@ideawoven.marrakech`
-- Facebook : `@Ideawoven-Marrakech` (Page « Ideawoven Marrakech »)
-- Pinterest : `@ideawovenartmural`
-
-Aucune API réelle n'est connectée : il s'agit uniquement d'une maquette statique pour concevoir l'interface avant toute intégration future.
+> Ne jamais republier de page publique affichant des chiffres d'audience simulés.
 
 ---
 
-**Dernière mise à jour** : 27 août 2026 (v2.3 — rebranding « Tableaux Muraux » + module Social Studio)
+**Dernière mise à jour** : 23 novembre 2026 (suppression du module Social Studio)
 

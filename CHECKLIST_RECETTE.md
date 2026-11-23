@@ -15,7 +15,7 @@ Cette checklist vous permet de vérifier en quelques secondes que chaque promess
 | **7. Fichier TXT produit** | Vérification du fichier `ajouter_produit_auto.txt`. | Le fichier est généré avec les 13 champs conformes au modèle Python. | ✅ Validé |
 | **8. Journalisation** | Consultation du journal. | Une entrée claire est ajoutée au journal avec la date, l'heure, le nom du tableau et le nombre de décalages. | ✅ Validé |
 | **9. Remise à zéro** | Après l'intégration. | La maquette `produit-0` n'est plus en attente et le bouton redevient **GRISÉ**, prêt pour le prochain tableau. | ✅ Validé |
-| **10. Social Studio & Pages** | Ouverture de `social.html` et `index.html`. | Les publications existantes et les pages du site conservent exactement leurs œuvres d'art d'origine. | ✅ Validé |
+| **10. Pages du site** | Ouverture de `index.html`, `process.html`, `materials.html`, `privacy.html`. | Les pages conservent exactement leurs œuvres d'art d'origine. (`social.html` supprimé le 23/11/2026 — ne plus le tester.) | ✅ Validé |
 
 ---
 
