@@ -293,6 +293,22 @@ export function resoudreMediaStable(mediaUrl, options = {}) {
 }
 
 /**
+ * Liste des stables INTOUCHABLES (jamais supprimés, toujours servis).
+ * Source : registre/stables_intouchables.json (manifeste versionné).
+ * @returns {Array<{chemin:string, slug?:string, raison?:string}>}
+ */
+export function lireStablesIntouchables({ siteDir } = {}) {
+  const racine = racineSite(siteDir);
+  const fichier = path.join(racine, '..', 'registre', 'stables_intouchables.json');
+  try {
+    const brut = JSON.parse(fs.readFileSync(fichier, 'utf-8'));
+    return Array.isArray(brut.stables) ? brut.stables.filter((s) => s && s.chemin) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Reconstruit INTÉGRALEMENT stable-map.json depuis contenu.js :
  *   - clés par rang courant (produit-N) ET par slug (stable:<slug>) ;
  *   - copies manquantes créées, copies périmées actualisées (SHA comparé) ;
@@ -305,6 +321,11 @@ export function resynchroniserStables({ siteDir, dryRun = false } = {}) {
   const stablesDir = path.join(racine, 'images', 'stables');
   const mappingFile = path.join(racine, '..', 'registre', 'stable-map.json');
   if (!dryRun) fs.mkdirSync(stablesDir, { recursive: true });
+
+  // LOT-CARTES-01 — manifeste des stables intouchables : jamais supprimés,
+  // jamais comptés comme orphelins/clés obsolètes. Leur fichier reste servi.
+  const intouchables = lireStablesIntouchables({ siteDir: racine });
+  const intouchablesSet = new Set(intouchables.map((s) => s.chemin));
 
   const ancien = (() => {
     try { return JSON.parse(fs.readFileSync(mappingFile, 'utf-8')); } catch { return {}; }
@@ -367,21 +388,31 @@ export function resynchroniserStables({ siteDir, dryRun = false } = {}) {
   }
 
   // Orphelins : fichiers stables dont le slug n'appartient à aucune œuvre.
+  // Les stables intouchables (manifeste) ne sont JAMAIS des orphelins.
   const fichiers = fs.existsSync(stablesDir) ? fs.readdirSync(stablesDir) : [];
   const orphelins = fichiers
-    .filter((f) => /\.(jpe?g|png|webp)$/i.test(f) && !slugs.has(f.replace(/\.[a-z0-9]+$/i, '')))
+    .filter((f) => /\.(jpe?g|png|webp)$/i.test(f)
+      && !slugs.has(f.replace(/\.[a-z0-9]+$/i, ''))
+      && !intouchablesSet.has(`images/stables/${f}`))
     .map((f) => `images/stables/${f}`);
 
   // Clés obsolètes : présentes dans l'ancienne carte mais PLUS dans la nouvelle
   // (rang supprimé, slug disparu). Les rangs dont la cible a changé (insertion
   // en tête = décalage attendu) sont comptés à part : « rangsDecales ».
+  // Une cible intouchable (ancien média d'un renommage) est classée
+  // « renommages », jamais « obsolète » ni « décalée ».
+  const estIntouchable = (chemin) => intouchablesSet.has(String(chemin || ''));
   const clesObsoletes = Object.keys(ancien).filter((k) => {
+    if (estIntouchable(ancien[k])) return false;
     if (/^produit-\d+$/.test(k)) return !mapping[k];
     if (k.startsWith('stable:')) return !slugs.has(k.slice('stable:'.length));
     return !mapping[k];
   });
   const rangsDecales = Object.keys(ancien)
-    .filter((k) => /^produit-\d+$/.test(k) && mapping[k] && ancien[k] !== mapping[k])
+    .filter((k) => /^produit-\d+$/.test(k) && mapping[k] && ancien[k] !== mapping[k] && !estIntouchable(ancien[k]))
+    .map((k) => ({ cle: k, avant: ancien[k], apres: mapping[k] }));
+  const renommages = Object.keys(ancien)
+    .filter((k) => /^produit-\d+$/.test(k) && mapping[k] && ancien[k] !== mapping[k] && estIntouchable(ancien[k]))
     .map((k) => ({ cle: k, avant: ancien[k], apres: mapping[k] }));
 
   let mappingEcrit = false;
@@ -393,7 +424,11 @@ export function resynchroniserStables({ siteDir, dryRun = false } = {}) {
   return {
     racine, dryRun, catalogue: catalogue.length,
     crees, actualises, inchanges, erreurs,
-    orphelins, clesObsoletes, rangsDecales,
+    orphelins, clesObsoletes, rangsDecales, renommages,
+    intouchables: intouchables.map((s) => ({
+      ...s,
+      existe: fs.existsSync(path.join(racine, s.chemin))
+    })),
     mappingEcrit, mappingFile, details, mapping
   };
 }
@@ -408,6 +443,8 @@ export function resumeResync(resultat) {
     orphelins: resultat.orphelins,
     clesObsoletes: resultat.clesObsoletes,
     rangsDecales: resultat.rangsDecales,
+    renommages: resultat.renommages || [],
+    intouchables: resultat.intouchables || [],
     erreurs: resultat.erreurs,
     mappingEcrit: resultat.mappingEcrit
   };

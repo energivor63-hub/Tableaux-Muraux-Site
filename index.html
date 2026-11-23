@@ -805,7 +805,7 @@
     </div>
 
     <!-- Fichier de contenu modifiable (P2a D10 : ?v=hash-court anti-cache) -->
-    <script src="contenu.js?v=6d81daba"></script>
+    <script src="contenu.js?v=703ea5d3"></script>
     <!-- Prix : source unique = champ `prix` de contenu.js (aucun plancher codé en dur). -->
     <script src="prix.js"></script>
     <script src="injection-contenu.js?v=a6dc2766"></script>
@@ -1114,6 +1114,24 @@
     `;
 
     // ═══ GALLERY (produits) ═══
+    // LOT-CARTES-01 — ancre native #oeuvre-<slug> (aucun JS de routage) :
+    // même règle de slug que site-web/medias-stables.js (accents retirés,
+    // minuscules, homonymes suffixés -2). Le catalogue Pinterest pointe ici.
+    const slugifierOeuvre = (valeur) => String(valeur || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80);
+    const slugsVus = new Map();
+    const slugParNom = new Map();
+    for (const p of CONTENU_SITE.produits) {
+        const base = slugifierOeuvre(p.nom);
+        const n = (slugsVus.get(base) || 0) + 1;
+        slugsVus.set(base, n);
+        slugParNom.set(p.nom, n === 1 ? base : `${base}-${n}`);
+    }
     // 🔒 Filtre de sécurité : exclut tout produit sans image OU utilisant le placeholder produit-0
     //    (produit-0.jpg doit rester vide et invisible pour les clients)
     const produitsVisibles = CONTENU_SITE.produits.filter(p => {
@@ -1124,7 +1142,7 @@
     document.getElementById('gallery-grid').innerHTML = produitsVisibles.map((p, i) => {
         const prixMasque = Prix.prixEstMasque(p);
         return `
-        <div class="gallery-item" data-category="${p.categorie}" data-style="${p.style || ''}" data-env="${p.environnement || ''}">
+        <div class="gallery-item" id="oeuvre-${slugParNom.get(p.nom)}" data-category="${p.categorie}" data-style="${p.style || ''}" data-env="${p.environnement || ''}">
             <div class="gallery-image ${p.image ? '' : 'fallback'}" data-img="${p.image}" data-fallback="${p.imageFallback || '🎨'}">
                 ${p.badge ? `<span class="gallery-badge">${p.badge}</span>` : ''}
             </div>

@@ -87,6 +87,9 @@ import {
 } from '../registre/media_check_cache.mjs';
 // 🔗 MICRO-13.3 v2.1 — cohérence URL champ == video-map == assets émis.
 import { verifierCoherenceUrlVideo } from '../registre/coherence_url.mjs';
+// 🛡️ LOT-CARTES-01 — garde-fou SHA : MP4 local == carte avant toute
+// programmation Buffer vidéo (échec = refus + journal, zéro createPost).
+import { verifierVideoCarte } from '../registre/video_map_guard.mjs';
 // 🖼️ MICRO-11v2-ter — médias stables : résolution DYNAMIQUE à l'envoi +
 // resynchronisation (hooks ajout/remplacement/édition). Jamais de carte périmée.
 import { resynchroniserStables, resumeResync, verifierMediasStables } from './medias-stables.js';
@@ -1387,6 +1390,29 @@ async function executerPublication(body, ciblesForcees) {
         };
       }
       videoUrl = verifVideo.url;
+      // 🛡️ LOT-CARTES-01 — SHA local == SHA carte avant tout createPost.
+      // La carte est la seule autorité de contenu ; un MP4 renommé/déplacé
+      // sans mise à jour de carte est refusé (journal + zéro mutation).
+      const gardeCarte = verifierVideoCarte({
+        videoFichier: body.videoFichier,
+        videoSha256: body.videoSha256
+      });
+      if (!gardeCarte.ok) {
+        journaliserIntegration({
+          type: 'video-map-sha', integrateur: 'local', reseau: platforms.join(', '),
+          produit, produitNom, statut: 'echec', code: gardeCarte.code,
+          message: gardeCarte.message, mediaType,
+          videoFichier: String(body.videoFichier || '').trim() || undefined,
+          videoSha256: String(body.videoSha256 || '').trim() || undefined,
+          videoUrl: videoUrlDemande || undefined
+        });
+        return {
+          success: false, error: gardeCarte.message, code: gardeCarte.code,
+          erreursParIntegrateur: [], resultats: [],
+          reseauxPublies: [], reseauxEchoues: platforms.slice(), variantes, mediaType,
+          gardeCarte
+        };
+      }
       // MICRO-13.2 — pré-contrôles durée/ratio/taille (avertissements seuls).
       const preControle = precontroleVideoLocal(String(body.videoFichier || '').trim(), {
         reseaux: platforms,
@@ -2289,6 +2315,31 @@ app.post('/api/social/schedule', async (req, res) => {
           statut: 'avertissement', message: coherenceUrl.message,
           mediaType, videoUrl: videoUrlDemande || undefined,
           videoFichier: videoFichier || undefined
+        });
+      }
+      // 🛡️ LOT-CARTES-01 — SHA local == SHA carte avant createPost programmé.
+      const gardeCarte = verifierVideoCarte({
+        videoFichier,
+        videoSha256,
+        slug: videoFichier ? slugVideoDepuisFichier(videoFichier) : null
+      });
+      if (!gardeCarte.ok) {
+        journaliserIntegration({
+          type: 'video-map-sha', integrateur: 'local', reseau: platform,
+          produit: produitId || 'inconnu', produitNom: produitNomFinal,
+          statut: 'echec', code: gardeCarte.code, message: gardeCarte.message,
+          mediaType, videoFichier: videoFichier || undefined,
+          videoSha256: videoSha256 || undefined,
+          videoUrl: videoUrlDemande || undefined
+        });
+        return res.json({
+          success: false,
+          code: gardeCarte.code,
+          error: gardeCarte.message,
+          message: gardeCarte.message,
+          gardeCarte,
+          dueAt: scheduledAtIso,
+          dueAtAffichage
         });
       }
     } else {
