@@ -1362,6 +1362,22 @@ async function executerPublication(body, ciblesForcees) {
     const produitNom = (fiche && fiche.nom) || body.produitNom || null;
     const { textes, origine, variantes } = resoudreTextesParReseau(platforms, body.copies, fiche);
 
+    // 🚫 metaIncertaine (MICRO-OFFRE-01) : exclusion de TOUT envoi Buffer.
+    // La fiche reste publique en « Sur demande » jusqu'à arbitrage ; aucun
+    // createPost n'est émis (le refus précède le pré-vol média).
+    if (fiche && fiche.metaIncertaine === true) {
+      const messageMeta = `Envoi Buffer refusé : la fiche « ${produitNom || produit} » porte metaIncertaine=true (détection non fiable, à arbitrer).`;
+      journaliserIntegration({
+        type: 'pre-vol', integrateur: 'meta', reseau: platforms.join(', '),
+        produit, produitNom, statut: 'refus', code: 'META_INCERTAINE', message: messageMeta
+      });
+      return {
+        success: false, code: 'META_INCERTAINE', error: messageMeta, message: messageMeta,
+        erreursParIntegrateur: [], resultats: [], reseauxPublies: [], reseauxEchoues: [],
+        reseauxRefuses: platforms.slice(), variantes, mediaType
+      };
+    }
+
     // 2 ─ Média : URL PUBLIQUE vérifiée (fetch → 200/206) AVANT envoi.
     // Image = GitHub Pages (verifierMediaPublic) ; vidéo = URL publique
     // fournie (verifierVideoPublique — localhost refusé, 0 mutation).
@@ -2259,6 +2275,18 @@ app.post('/api/social/schedule', async (req, res) => {
     const produitNomFinal = fiche?.nom || produitNom || nomProduitDepuisUrl(mediaUrl) || 'Œuvre inconnue';
     const produitCles = [...new Set([produitId, produitNom, nomProduitDepuisUrl(mediaUrl), fiche?.nom, fiche && nomProduitDepuisUrl(fiche?.image), critere].filter(Boolean).map(String))];
 
+    // 🚫 metaIncertaine (MICRO-OFFRE-01) : aucune programmation Buffer tant que
+    // la détection n'est pas arbitrée (le refus précède tout createPost).
+    if (fiche && fiche.metaIncertaine === true) {
+      const messageMeta = `Programmation Buffer refusée : la fiche « ${produitNomFinal} » porte metaIncertaine=true (détection non fiable, à arbitrer).`;
+      journaliserIntegration({
+        type: 'pre-vol', integrateur: 'meta', reseau: platform,
+        produit: produitId || produitCles[0] || 'inconnu', produitNom: produitNomFinal,
+        statut: 'refus', code: 'META_INCERTAINE', message: messageMeta
+      });
+      return res.json({ success: false, code: 'META_INCERTAINE', error: messageMeta, message: messageMeta });
+    }
+
     // Vérifier média public AVANT envoi (même logique que /api/social/publish)
     let finalMediaUrl = mediaUrl;
     let finalVideoUrl = null;
@@ -2909,17 +2937,19 @@ app.delete('/api/social/drafts/:id', (req, res) => {
 const TOWER_SYNC_TOKEN = String(process.env.TOWER_SYNC_TOKEN || '').trim();
 const SYNC_TARIFS_SCRIPT = path.join(ROOT_DIR, 'registre', 'synchro_tarifs_unifie.mjs');
 const SYNC_CONTENU_SCRIPT = path.join(ROOT_DIR, 'registre', 'synchro_contenu_images.mjs');
-const SYNC_HTML_UNIFIE = path.join(ROOT_DIR, 'registre', 'Registre-Tarifs-2026-09-14-Unifie.html');
+const SYNC_HTML_UNIFIE = path.join(ROOT_DIR, 'registre', 'Registre-Tarifs-2026-11-23.html');
+const SYNC_HTML_TARGET = 'registre/Registre-Tarifs-2026-11-23.html';
 const SYNC_CONTENU_JS = path.join(SITE_DIR, 'contenu.js');
 const SYNC_BACKUP_DIR = path.join(ROOT_DIR, 'sauvegardes', 'sync-prix');
 const SYNC_JOURNAL_JSON = path.join(ROOT_DIR, 'journaux', 'sync-prix-journal.json');
 
-/** Lecture des 5 taux v7 — garde de version (v6 détecté → erreur claire). */
+/** Lecture des 5 taux — garde de version v7 OU v8 (édition 23/11 courante). */
 function lireTauxV7() {
   const chemin = path.join(ROOT_DIR, 'tarifs.json');
   const t = JSON.parse(fs.readFileSync(chemin, 'utf-8'));
-  if (t.version === 'v6') throw new Error('tarifs.json v6 détecté, attendu v7');
-  if (t.version !== 'v7') throw new Error('tarifs.json : version inattendue « ' + (t.version || '(absente)') + ' », attendu v7');
+  if (t.version !== 'v7' && t.version !== 'v8') {
+    throw new Error('tarifs.json : version inattendue « ' + (t.version || '(absente)') + ' », attendu v7 ou v8');
+  }
   const tmp = t.taux_matieres_premieres || {};
   return {
     bache_m2: tmp.bache_m2,
@@ -3015,7 +3045,7 @@ app.get('/api/control-tower/sync-prix/preview', async (req, res) => {
     return reponseMasquee(res, 409, { ok: false, etape: 'preview', error: masquerSecrets(err.message) });
   }
   try {
-    const rTarifs = await spawnNode(SYNC_TARIFS_SCRIPT, ['--dry-run'], null);
+    const rTarifs = await spawnNode(SYNC_TARIFS_SCRIPT, ['--dry-run', '--target=' + SYNC_HTML_TARGET], null);
     const rContenu = await spawnNode(SYNC_CONTENU_SCRIPT, ['--preview'], null);
     reponseMasquee(res, 200, {
       ok: rTarifs.code === 0 && rContenu.code === 0,

@@ -273,6 +273,7 @@
         .couleur-tag { padding: 0.2rem 0.6rem; background: white; border: 1px solid #e5e5e5; border-radius: 50px; font-size: 0.7rem; color: var(--gray); }
         .gallery-footer { display: flex; justify-content: space-between; align-items: center; }
         .gallery-price { font-size: 1.1rem; font-weight: 700; color: var(--dark); letter-spacing: 2px; font-family: 'Playfair Display', serif; }
+        .gallery-reference { text-align: center; color: #6B7280; margin: .6rem auto 1.4rem; font-size: .95rem; max-width: 760px; }
         .gallery-price.masque { color: var(--gray); font-style: italic; font-size: 1rem; letter-spacing: 2px; font-weight: 500; }
         .gallery-action { background: var(--dark); color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 50px; cursor: pointer; font-size: 0.9rem; transition: all 0.3s; display: flex; align-items: center; gap: 0.5rem; }
         .gallery-action:hover { background: var(--primary); transform: translateY(-2px); }
@@ -653,6 +654,7 @@
                 <span class="section-tag" data-contenu="gallery.sectionTag">Notre Collection</span>
                 <h2 data-contenu="gallery.sectionTitle">Découvrez nos créations</h2>
                 <p data-contenu="gallery.sectionDesc">Des œuvres uniques pour sublimer votre intérieur</p>
+                <p class="gallery-reference" id="gallery-reference"></p>
             </div>
             <div class="vitrine-bar">
                 <a id="vitrine-link" class="vitrine-btn" href="showcase.html?mode=vitrine&amp;loop=1" target="_blank" rel="noopener" title="Lancer le mode vitrine 9:16 pour la capture vidéo">
@@ -806,7 +808,12 @@
 
     <!-- Fichier de contenu modifiable (P2a D10 : ?v=hash-court anti-cache) -->
     <script src="contenu.js?v=703ea5d3"></script>
-    <!-- Prix : source unique = champ `prix` de contenu.js (aucun plancher codé en dur). -->
+    <!-- Listes runtime (types/montages/triptyques) + slug canonique, dérivés de contenu.js. -->
+    <script src="catalogue-meta.js"></script>
+    <!-- Grille tarifaire publiée : artefact généré depuis tarifs.json racine. -->
+    <script src="tarifs-loader.js"></script>
+    <!-- Prix : source unique = champ `prix` de contenu.js (plancher réel) ;
+         l'offre publique (335/1005) est calculée depuis la grille v8. -->
     <script src="prix.js"></script>
     <script src="injection-contenu.js?v=a6dc2766"></script>
 
@@ -1114,35 +1121,38 @@
     `;
 
     // ═══ GALLERY (produits) ═══
-    // LOT-CARTES-01 — ancre native #oeuvre-<slug> (aucun JS de routage) :
-    // même règle de slug que site-web/medias-stables.js (accents retirés,
-    // minuscules, homonymes suffixés -2). Le catalogue Pinterest pointe ici.
-    const slugifierOeuvre = (valeur) => String(valeur || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 80);
-    const slugsVus = new Map();
-    const slugParNom = new Map();
-    for (const p of CONTENU_SITE.produits) {
-        const base = slugifierOeuvre(p.nom);
-        const n = (slugsVus.get(base) || 0) + 1;
-        slugsVus.set(base, n);
-        slugParNom.set(p.nom, n === 1 ? base : `${base}-${n}`);
-    }
-    // 🔒 Filtre de sécurité : exclut tout produit sans image OU utilisant le placeholder produit-0
-    //    (produit-0.jpg doit rester vide et invisible pour les clients)
-    const produitsVisibles = CONTENU_SITE.produits.filter(p => {
-        if (!p.image) return false;
-        if (/\bproduit-0\.\w+$/.test(p.image)) return false;
-        return true;
-    });
-    document.getElementById('gallery-grid').innerHTML = produitsVisibles.map((p, i) => {
-        const prixMasque = Prix.prixEstMasque(p);
-        return `
-        <div class="gallery-item" id="oeuvre-${slugParNom.get(p.nom)}" data-category="${p.categorie}" data-style="${p.style || ''}" data-env="${p.environnement || ''}">
+    // Ancre native #oeuvre-<slug> : le slug vient de catalogue-meta.js
+    // (implémentation unique, homonymes suffixés -2). index.html ne le
+    // recalcule plus (D4 : le nom prime sur le rang).
+    function rendreGalerie() {
+        const tarifs = (typeof Tarifs !== 'undefined' && typeof Tarifs.actuels === 'function')
+            ? Tarifs.actuels() : null;
+        const referenceEl = document.getElementById('gallery-reference');
+        if (referenceEl) {
+            referenceEl.textContent = tarifs ? Prix.mentionReference(tarifs) : '';
+        }
+
+        const analyse = CatalogueMeta.analyserCatalogue(CONTENU_SITE);
+        const slugParIndex = new Map(analyse.produits.map(f => [f.index, f.slug]));
+
+        // 🔒 Filtre de sécurité : exclut tout produit sans image OU utilisant le placeholder produit-0
+        //    (produit-0.jpg doit rester vide et invisible pour les clients).
+        //    L'index d'origine est conservé pour retrouver le slug.
+        const entreesVisibles = CONTENU_SITE.produits
+            .map((p, index) => ({ p, index }))
+            .filter(({ p }) => {
+                if (!p.image) return false;
+                if (/\bproduit-0\.\w+$/.test(p.image)) return false;
+                return true;
+            });
+
+        document.getElementById('gallery-grid').innerHTML = entreesVisibles.map(({ p, index }) => {
+            const prixMasque = Prix.prixEstMasque(p);
+            // Offre publique : 335 MAD (ou 1005 triptyque) ; metaIncertaine ⇒ « Sur demande ».
+            const prixCarte = Prix.prixCarte(p, tarifs) || Prix.prixAffiche(p);
+            const surDemande = prixCarte === Prix.MENTION_SUR_DEMANDE;
+            return `
+        <div class="gallery-item" id="oeuvre-${slugParIndex.get(index)}" data-category="${p.categorie}" data-style="${p.style || ''}" data-env="${p.environnement || ''}">
             <div class="gallery-image ${p.image ? '' : 'fallback'}" data-img="${p.image}" data-fallback="${p.imageFallback || '🎨'}">
                 ${p.badge ? `<span class="gallery-badge">${p.badge}</span>` : ''}
             </div>
@@ -1163,37 +1173,51 @@
                 ` : ''}
                 ${p.ambiance ? `<div class="gallery-ambiance">✨ ${p.ambiance}</div>` : ''}
                 <div class="gallery-footer">
-                    <span class="gallery-price ${prixMasque ? 'masque' : ''}">${Prix.prixAffiche(p)}</span>
+                    <span class="gallery-price ${prixMasque ? 'masque' : ''} ${surDemande ? 'sur-demande' : ''}">${prixCarte}</span>
                     <button class="gallery-action" data-product="${p.nom}">Commander</button>
                 </div>
             </div>
         </div>
     `}).join('');
 
-    // Chargement des images avec fallback
-    document.querySelectorAll('.gallery-image[data-img]').forEach(el => {
-        const imgPath = el.dataset.img;
-        const fallback = el.dataset.fallback;
-        if (imgPath && imgPath !== 'null') {
-            const img = new Image();
-            img.onload = () => { el.innerHTML = `<img src="${imgPath}" alt="" />` + el.innerHTML.replace(fallback, ''); };
-            img.onerror = () => { el.textContent = ''; el.classList.add('fallback'); el.innerHTML = fallback + (el.querySelector('.gallery-badge') ? el.querySelector('.gallery-badge').outerHTML : ''); };
-            img.src = imgPath;
-        } else {
-            el.classList.add('fallback');
-            el.textContent = fallback;
-        }
-    });
-
-    // Boutons "Commander" dans la galerie
-    document.querySelectorAll('.gallery-action[data-product]').forEach(btn => {
-        btn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const productName = this.dataset.product;
-            const message = `Je suis intéressé(e) par le tableau "${productName}". Pouvez-vous me donner plus d'informations ?`;
-            window.open(buildWhatsAppLink(message), '_blank');
+        // Chargement des images avec fallback
+        document.querySelectorAll('.gallery-image[data-img]').forEach(el => {
+            const imgPath = el.dataset.img;
+            const fallback = el.dataset.fallback;
+            if (imgPath && imgPath !== 'null') {
+                const img = new Image();
+                img.onload = () => { el.innerHTML = `<img src="${imgPath}" alt="" />` + el.innerHTML.replace(fallback, ''); };
+                img.onerror = () => { el.textContent = ''; el.classList.add('fallback'); el.innerHTML = fallback + (el.querySelector('.gallery-badge') ? el.querySelector('.gallery-badge').outerHTML : ''); };
+                img.src = imgPath;
+            } else {
+                el.classList.add('fallback');
+                el.textContent = fallback;
+            }
         });
-    });
+
+        // Boutons "Commander" dans la galerie
+        document.querySelectorAll('.gallery-action[data-product]').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const productName = this.dataset.product;
+                const message = `Je suis intéressé(e) par le tableau "${productName}". Pouvez-vous me donner plus d'informations ?`;
+                window.open(buildWhatsAppLink(message), '_blank');
+            });
+        });
+    }
+
+    // La grille tarifaire arrive de façon asynchrone : on rend la galerie dès
+    // qu'elle est disponible. En test, `TARIFS_SITE` est préchargé (rendu synchrone).
+    if (typeof Tarifs !== 'undefined' && typeof Tarifs.charger === 'function' && !Tarifs.actuels()) {
+        Tarifs.charger('tarifs.json')
+            .then(rendreGalerie)
+            .catch((err) => {
+                console.warn('[tarifs] grille indisponible :', err && err.message ? err.message : err);
+                rendreGalerie();
+            });
+    } else {
+        rendreGalerie();
+    }
 
     // ═══ TESTIMONIALS ═══
     // ⚠️ Aucun avis inventé : si la liste est vide (phase de lancement), on
@@ -1289,7 +1313,6 @@
 
     // ═══ GALLERY FILTER ═══
     const filterBtns = document.querySelectorAll('.filter-btn');
-    const galleryItems = document.querySelectorAll('.gallery-item');
     const activeFilters = { category: 'all', style: 'all', env: 'all' };
 
     // Listes des valeurs prédéfinies (pour détecter "Autres" : produits hors liste)
@@ -1308,7 +1331,7 @@
     }
 
     function applyFilters() {
-        galleryItems.forEach(item => {
+        document.querySelectorAll('.gallery-item').forEach(item => {
             const cat = item.dataset.category;
             const style = item.dataset.style;
             const env = item.dataset.env;

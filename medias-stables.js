@@ -30,6 +30,10 @@ import path from 'path';
 import crypto from 'crypto';
 import vm from 'vm';
 import { fileURLToPath } from 'url';
+// Slugifieur UNIQUE : implémentation canonique de catalogue-meta.js (D4).
+import { slugifier } from './catalogue-meta-runtime.mjs';
+
+export { slugifier };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,17 +56,6 @@ export class MediaStableError extends Error {
 /** Résout la racine du site (surchargeable pour les tests / sandbox). */
 export function racineSite(siteDir) {
   return siteDir || process.env.MEDIAS_STABLES_SITE_DIR || SITE_DIR;
-}
-
-/** Slug canonique d'une œuvre : minuscules, accents retirés, espaces → « - ». */
-export function slugifier(str) {
-  return String(str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
 }
 
 /** Chemin relatif d'image depuis une URL ou un chemin (origine, base GitHub

@@ -5,6 +5,17 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { spawn, spawnSync } from 'child_process';
 import { GoogleGenAI } from '@google/genai';
+// 💰 Formules tarifaires : UNE implémentation Node (miroir navigateur prix.js).
+import {
+  calculerPrix as calculerPrixTarifs,
+  prixReference as prixReferenceFormule,
+  validerGrille as validerGrilleTarifs,
+  normaliserMatiere as normaliserMatiereFormule,
+  normaliserMontage as normaliserMontageFormule,
+  FORMAT_PLANCHER
+} from '../registre/formules_tarifs.mjs';
+// 📚 Listes runtime : montages autorisés dérivés de contenu.js (zéro liste en dur).
+import { analyserCatalogue } from './catalogue-meta-runtime.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,7 +80,8 @@ export const ALLOWED_CATEGORIES = ["abstrait", "paysages", "calligraphie", "mode
 export const ALLOWED_STYLES = ["contemporain", "traditionnel", "minimaliste", "boheme", "art-deco", "autres"];
 export const ALLOWED_ENVIRONNEMENTS = ["salon", "chambre", "bureau", "entree", "riad", "cabinet", "ecole-primaire", "autres"];
 export const ALLOWED_MATERIAUX = ["Toile Canvas", "bâche premium"];
-export const ALLOWED_MONTAGES = ["Cadre Américain", "Châssis Bois"];
+// ⚠️ ALLOWED_MONTAGES supprimé (dette P1) : les montages autorisés sont
+// dérivés à l'exécution depuis contenu.js via catalogue-meta.js.
 
 // ⚙️ Paramètres Groq Vision
 export const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
@@ -304,7 +316,7 @@ export function getCurrentCatalog() {
     while ((m = objectRegex.exec(block)) !== null) {
       const body = m[1];
       const getField = (field) => {
-        const fieldMatch = body.match(new RegExp(`${field}:\\s*(?:"([^"]*)"|'([^']*)'|(\\[[^\\]]*\\])|(null|true|false|\\d+))`));
+        const fieldMatch = body.match(new RegExp(`${field}:\\s*(?:"([^"]*)"|'([^']*)'|(\\[[^\\]]*\\])|(null|true|false|-?\\d+(?:\\.\\d+)?))`));
         if (!fieldMatch) return null;
         if (fieldMatch[1] !== undefined) return fieldMatch[1];
         if (fieldMatch[2] !== undefined) return fieldMatch[2];
@@ -314,17 +326,33 @@ export function getCurrentCatalog() {
         if (fieldMatch[4] === 'null') return null;
         return fieldMatch[4];
       };
+      const getBool = (field) => {
+        const v = getField(field);
+        if (v === true || v === 'true') return true;
+        if (v === false || v === 'false') return false;
+        return null;
+      };
+      const getNumber = (field) => {
+        const v = getField(field);
+        if (v == null || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
 
       const nom = getField('nom') || `Tableau #${rank}`;
       const image = getField('image') || `images/produit-${rank}.jpg`;
       const description = getField('description') || '';
       const categorie = getField('categorie') || 'autres';
+      const type = getField('type') || categorie;
       const style = getField('style') || 'traditionnel';
       const environnement = getField('environnement') || 'salon';
       const prix = getField('prix') || 'Prix sur demande';
       const badge = getField('badge');
       const materiauRecommande = getField('materiauRecommande') || 'Toile Canvas';
-      const montageRecommande = getField('montageRecommande') || 'Cadre Américain';
+      const montageRecommande = getField('montageRecommande') || '';
+      const panneaux = getNumber('panneaux');
+      const triptyque = getBool('triptyque') != null ? getBool('triptyque') : (panneaux != null ? panneaux >= 3 : false);
+      const metaIncertaine = getBool('metaIncertaine') === true;
       const couleurs = getField('couleurs') || ['Ocre', 'Bleu', 'Doré'];
       const ambiance = getField('ambiance') || 'Chaleureuse et authentique';
       // MICRO-8 — URL vidéo publique liée à la FICHE (jamais au rang) :
@@ -336,6 +364,7 @@ export function getCurrentCatalog() {
         nom,
         description,
         categorie,
+        type,
         style,
         environnement,
         image,
@@ -344,6 +373,9 @@ export function getCurrentCatalog() {
         badge,
         materiauRecommande,
         montageRecommande,
+        panneaux: panneaux == null ? (triptyque ? 3 : 1) : panneaux,
+        triptyque,
+        metaIncertaine,
         couleurs: Array.isArray(couleurs) ? couleurs : [couleurs],
         ambiance
       });
@@ -413,14 +445,63 @@ export function repairTruncatedJson(raw) {
 }
 
 /**
- * 🧩 Normalise la réponse JSON de l'IA vision vers la fiche 13 champs métier.
- * Le schéma COMPACT à clés courtes (nom, desc, cat, style, env, coul[], amb,
- * mat, mont, fallback) réduit de moitié la taille de sortie pour rester sous
- * le plafond OTPM du tier gratuit Groq (max_tokens 950 vs limite 1000/min).
- * Les clés longues (description, categorie, ...) restent acceptées par
- * compatibilité. Prix : TOUJOURS le plancher tarifs.json derive de la
- * classification (matiere x montage x uni) — jamais 180 par defaut, jamais
- * herite (mission MICRO 26/09). Badge : « Nouveau » sauf si le modèle en renvoie.
+ * Type public : slug libre (un type inédit est accepté et devient une
+ * nouvelle entrée runtime dans catalogue-meta.js). Les alias éditoriaux
+ * usuels sont normalisés pour ne pas dupliquer « paysage/paysages ».
+ */
+export function normaliserTypeOffre(valeur, fallback = 'autres') {
+  const brut = String(valeur == null ? '' : valeur)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+  if (!brut) return fallback;
+  const slug = brut.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug) return fallback;
+  const alias = {
+    paysage: 'paysages',
+    paysages: 'paysages',
+    autre: 'autres',
+    autres: 'autres'
+  };
+  return alias[slug] || slug;
+}
+
+/** Normalise un libellé pour comparaison (accents/casse/espaces). */
+function normaliserLibelle(valeur) {
+  return String(valeur == null ? '' : valeur)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/** Montages autorisés, DÉRIVÉS du catalogue courant (aucune liste en dur). */
+export function montagesAutorises() {
+  return analyserCatalogue(getCurrentCatalog()).montages.map((m) => m.id);
+}
+
+/**
+ * Montage : la valeur renvoyée par l'IA n'est acceptée que si elle correspond
+ * à un montage RÉELLEMENT présent dans contenu.js (comparaison normalisée).
+ * Une valeur inconnue renvoie null : l'appelant la marque `metaIncertaine`.
+ */
+export function normaliserMontageOffre(valeur) {
+  const cible = normaliserLibelle(valeur);
+  if (!cible) return null;
+  return montagesAutorises().find((label) => normaliserLibelle(label) === cible) || null;
+}
+
+/**
+ * 🧩 Normalise la réponse JSON de l'IA vision vers la fiche 16 champs métier.
+ * Nouveaux champs : `type` (type public, existant ou inédit), `triptyque`
+ * (3 panneaux distincts) et `metaIncertaine` (détection non fiable).
+ * Le schéma COMPACT à clés courtes (nom, desc, cat, type, style, env, coul[],
+ * amb, mat, mont, trip, fallback) réduit la taille de sortie pour rester sous
+ * le plafond OTPM du tier gratuit Groq. Les clés longues restent acceptées.
+ * Prix : TOUJOURS la référence v8 (80×120 bâche tendue châssis pin),
+ * soit 335 MAD, ou 1005 MAD pour un triptyque — jamais hérité du rang 1.
  */
 export function parseVisionChamps(parsed) {
   const normalizeTaxonomy = (val, allowed, defaultVal) => {
@@ -430,7 +511,16 @@ export function parseVisionChamps(parsed) {
     return match || defaultVal;
   };
 
-  const categorie = normalizeTaxonomy(parsed.cat || parsed.categorie, ALLOWED_CATEGORIES, 'autres');
+  const typeRaw = parsed.type || parsed.typeOffre || parsed.cat || parsed.categorie;
+  const typeNormalise = normaliserTypeOffre(typeRaw, 'autres');
+  const typeValide = Boolean(typeRaw) && typeNormalise !== 'autres';
+  const type = typeValide ? typeNormalise : 'autres';
+
+  // `categorie` reste la taxonomie historique éditoriale ; un type inédit
+  // n'est pas injecté de force dans cette liste fermée.
+  const categorie = ALLOWED_CATEGORIES.includes(type)
+    ? type
+    : normalizeTaxonomy(parsed.cat || parsed.categorie, ALLOWED_CATEGORIES, 'autres');
   const style = normalizeTaxonomy(parsed.style, ALLOWED_STYLES, 'traditionnel');
   const environnement = normalizeTaxonomy(parsed.env || parsed.environnement, ALLOWED_ENVIRONNEMENTS, 'salon');
 
@@ -444,11 +534,41 @@ export function parseVisionChamps(parsed) {
     throw new Error(`Matiere non reconnue pour le plancher tarifaire : « ${parsed.mat || parsed.materiauRecommande} » (attendu : bâche premium ou Toile Canvas).`);
   }
 
-  const montRaw = String(parsed.mont || parsed.montageRecommande || '').toLowerCase();
-  let montageRecommande = 'Cadre Américain';
-  if (montRaw.includes('châssis') || montRaw.includes('chassis')) {
-    montageRecommande = 'Châssis Bois';
+  const montRaw = parsed.mont || parsed.montageRecommande;
+  const montageDetecte = normaliserMontageOffre(montRaw);
+  const montageIncertaine = montRaw != null && String(montRaw).trim() !== '' && !montageDetecte;
+  // Aucun libellé de montage codé en dur : repli sur le premier montage réel
+  // du catalogue ; catalogue vide = erreur actionnable.
+  const montageRecommande = montageDetecte || montagesAutorises()[0] || null;
+  if (!montageRecommande) {
+    throw new Error('Aucun montage exploitable dans contenu.js — insertion refusée.');
   }
+
+  const tripRaw = parsed.trip !== undefined ? parsed.trip : parsed.triptyque;
+  let triptyque = false;
+  let triptyqueIncertaine = false;
+  if (typeof tripRaw === 'boolean') {
+    triptyque = tripRaw;
+  } else if (typeof tripRaw === 'string') {
+    const v = tripRaw.trim().toLowerCase();
+    if (['true', 'oui', '1', 'yes'].includes(v)) triptyque = true;
+    else if (['false', 'non', '0', 'no'].includes(v)) triptyque = false;
+    else triptyqueIncertaine = true;
+  } else if (tripRaw == null) {
+    // Ancien schéma sans `trip` : hypothèse uni EXPLICITE, pas une incertitude.
+    triptyque = false;
+  } else {
+    triptyqueIncertaine = true;
+  }
+
+  // `panneaux` explicite (si un hook l'a fourni) : seules les valeurs 1 et 3
+  // sont valides ; 2/4 ⇒ metaIncertaine (fiche à arbitrer, jamais écrasée).
+  const panneauxExplicite = Number(parsed.panneaux);
+  const panneauxFourni = Number.isFinite(panneauxExplicite) && panneauxExplicite > 0
+    ? panneauxExplicite
+    : null;
+  const panneauxProvisoire = panneauxFourni != null ? panneauxFourni : (triptyque ? 3 : 1);
+  const panneauxIncertaine = panneauxFourni != null && panneauxFourni !== 1 && panneauxFourni !== 3;
 
   const rawCouleurs = parsed.coul || parsed.couleurs;
   const couleurs = Array.isArray(rawCouleurs) && rawCouleurs.length > 0
@@ -456,17 +576,33 @@ export function parseVisionChamps(parsed) {
     : ['Beige', 'Doré', 'Noir'];
 
   const rawBadge = parsed.bd || parsed.badge;
+  const incertainDéclaré = parsed.metaIncertaine === true || parsed.incertain === true ||
+    ['true', 'oui', '1'].includes(String(parsed.metaIncertaine || parsed.incertain || '').toLowerCase());
+  const metaIncertaine = Boolean(
+    incertainDéclaré || !typeValide || montageIncertaine || triptyqueIncertaine || panneauxIncertaine
+  );
 
-  // Prix plancher tarifs.json (mission MICRO 26/09) : derive de la classification
-  // Groq (matiere x montage x panneaux uni par defaut). Le prix brut eventuel de
-  // l'IA (rawPrix) est IGNORE : il ne doit jamais imiter le rang 1 precedent.
-  // Matiere inconnue -> throw actionnable (ecaillage silencieux interdit).
-  const prix = libellePrixPlancher(prixPlancherTarifs(materiauRecommande, montageRecommande, 1));
+  // Détection non fiable → repli conservateur, jamais silencieux :
+  // type « autres », triptyque false, metaIncertaine true + journal.
+  const typeFinal = metaIncertaine && !typeValide ? 'autres' : type;
+  const triptyqueFinal = panneauxFourni != null
+    ? panneauxFourni === 3
+    : (triptyqueIncertaine ? false : triptyque);
+  const panneaux = panneauxFourni != null
+    ? panneauxFourni
+    : (triptyqueFinal ? 3 : 1);
+
+  // `prix` de contenu.js = PLANCHER RÉEL de la combinaison (repère 40×50),
+  // jamais la référence publique 335 : l'UI calcule 335/1005 à l'affichage.
+  const prix = libellePrixPlancher(
+    prixCombinaisonTarifs(materiauRecommande, montageRecommande, panneaux, FORMAT_PLANCHER)
+  );
 
   return {
     nom: parsed.nom || 'Calligraphie & Arabesques Dorées',
     description: parsed.desc || parsed.description || 'Tableau mural d\'exception alliant la noblesse de la calligraphie à des finitions contemporaines haut de gamme.',
     categorie,
+    type: typeFinal,
     style,
     environnement,
     imageFallback: parsed.fallback || parsed.imageFallback || (categorie === 'calligraphie' ? '📜' : '🎨'),
@@ -474,6 +610,9 @@ export function parseVisionChamps(parsed) {
     badge: rawBadge !== undefined ? rawBadge : 'Nouveau',
     materiauRecommande,
     montageRecommande,
+    panneaux,
+    triptyque: triptyqueFinal,
+    metaIncertaine,
     couleurs,
     ambiance: parsed.amb || parsed.ambiance || 'Spirituelle, noble et chaleureuse'
   };
@@ -529,7 +668,7 @@ export async function analyzeMockupWithAI(imagePath) {
 
   const systemPrompt = `Tu es l'expert en histoire de l'art décoratif et conservateur de collection pour la maison d'artisanat d'art « Tableaux Muraux » à Marrakech.
 
-Ton rôle est d'analyser l'image fournie de cette maquette de tableau mural et d'en extraire avec une PRÉCISION ABSOLUE les éléments de sa fiche technique pour le catalogue officiel (le moteur complète ensuite les 13 champs métier).
+Ton rôle est d'analyser l'image fournie de cette maquette de tableau mural et d'en extraire avec une PRÉCISION ABSOLUE les éléments de sa fiche technique pour le catalogue officiel (le moteur complète ensuite les 16 champs métier).
 
 INSTRUCTIONS D'OBSERVATION VISUELLE STRICTE :
 1. SUJET RÉEL :
@@ -546,17 +685,19 @@ INSTRUCTIONS D'OBSERVATION VISUELLE STRICTE :
    - Choisis "Toile Canvas" si l'image présente un grain texturé artistique, un effet de peinture sur toile, un fond granuleux, de la matière ou des touches dorées artisanales.
    - Choisis "bâche premium" si l'image est un rendu photographique ultra-lisse, brillant, à haute netteté ou contemporain.
 
-4. TAXONOMIE OBLIGATOIRE (valeurs exactes autorisées, à reporter dans les clés courtes) :
+4. TAXONOMIE (valeurs exactes autorisées, à reporter dans les clés courtes) :
    - "cat" : STRICTEMENT l'une de ["abstrait", "paysages", "calligraphie", "moderne", "geometrique", "floral", "autres"].
+   - "type" : type public de l'œuvre. Réutilise EXACTEMENT "cat" si le sujet correspond ; sinon propose un type court, en minuscules, sans accent (ex: "portrait", "nature-morte"). Les types inédits sont acceptés.
    - "style" : STRICTEMENT l'une de ["contemporain", "traditionnel", "minimaliste", "boheme", "art-deco", "autres"].
    - "env" : STRICTEMENT l'une de ["salon", "chambre", "bureau", "entree", "riad", "cabinet", "ecole-primaire", "autres"].
    - "mat" : STRICTEMENT "Toile Canvas" ou "bâche premium".
-   - "mont" : STRICTEMENT "Cadre Américain" ou "Châssis Bois".
+   - "mont" : STRICTEMENT "Cadre Américain", "Châssis Bois" ou "Toile Tendue".
+   - "trip" : true UNIQUEMENT si l'image montre TROIS panneaux physiques distincts séparés par des espaces ; false pour un panneau unique ou un diptyque.
    - "fallback" : Un emoji adapté (ex: "📜" pour calligraphie, "🏺" pour riad/poterie, "✨" pour or/zellige, "🕌" pour islamique, "🎨" pour abstrait, "🌴" pour paysages).
 
 5. FORMAT DE RÉPONSE (SCHÉMA COMPACT — budget de sortie STRICT, clés courtes obligatoires) :
 Réponds UNIQUEMENT avec un objet JSON pur, sans bloc markdown, en utilisant EXACTEMENT ces clés courtes :
-{"nom":"Titre poétique et noble en français","desc":"2 phrases maximum, précises (composition, textures, lumière)","cat":"calligraphie","style":"traditionnel","env":"salon","coul":["Beige","Crème","Doré"],"amb":"Spirituelle, noble et chaleureuse","mat":"Toile Canvas","mont":"Cadre Américain","fallback":"📜"}
+{"nom":"Titre poétique et noble en français","desc":"2 phrases maximum, précises (composition, textures, lumière)","cat":"calligraphie","type":"calligraphie","style":"traditionnel","env":"salon","coul":["Beige","Crème","Doré"],"amb":"Spirituelle, noble et chaleureuse","mat":"Toile Canvas","mont":"Cadre Américain","trip":false,"fallback":"📜"}
 
 CONTRAINTES DE COMPACITÉ (non négociables — plafond de tokens de sortie) :
 - "desc" : 2 phrases MAXIMUM, pas une de plus.
@@ -809,10 +950,14 @@ export function createSecurityBackup() {
 }
 
 /**
- * 📝 Écrit la fiche 13 champs dans ../ajouter_produit_auto.txt à la racine
+ * 📝 Écrit la fiche 16 champs dans ../ajouter_produit_auto.txt à la racine
  */
 export function writeFicheTxt(champs, mockupFullPath) {
   const sourcePath = mockupFullPath.replace(/\\/g, '/');
+  const triptyque = champs.triptyque === true;
+  const panneaux = Number.isFinite(Number(champs.panneaux)) && Number(champs.panneaux) > 0
+    ? Number(champs.panneaux)
+    : (triptyque ? 3 : 1);
 
   const content = `# ═══════════════════════════════════════════════════════════════
 #  📋 FICHE PRODUIT — lue automatiquement par ajouter_produit_auto.py
@@ -824,10 +969,11 @@ export function writeFicheTxt(champs, mockupFullPath) {
 # 📸 CHEMIN ABSOLU DE LA NOUVELLE IMAGE
 source: "${sourcePath}"
 
-# 🖼️ MÉTADONNÉES DU PRODUIT (13 champs métier déduits de l'image)
+# 🖼️ MÉTADONNÉES DU PRODUIT (16 champs métier déduits de l'image)
 nom: "${champs.nom.replace(/"/g, '\\"')}"
 description: "${champs.description.replace(/"/g, '\\"')}"
 categorie: "${champs.categorie}"
+type: "${champs.type || champs.categorie}"
 style: "${champs.style}"
 environnement: "${champs.environnement}"
 image: "images/produit-1.jpg"
@@ -836,6 +982,9 @@ prix: "${champs.prix}"
 badge: ${champs.badge ? `"${champs.badge}"` : 'null'}
 materiauRecommande: "${champs.materiauRecommande}"
 montageRecommande: "${champs.montageRecommande}"
+panneaux: ${panneaux}
+triptyque: ${triptyque}
+metaIncertaine: ${champs.metaIncertaine === true}
 couleurs: ${JSON.stringify(champs.couleurs)}
 ambiance: "${champs.ambiance.replace(/"/g, '\\"')}"
 `;
@@ -845,56 +994,78 @@ ambiance: "${champs.ambiance.replace(/"/g, '\\"')}"
 }
 
 /**
- * Tarifs v7 -> prix plancher (mission MICRO 26/09).
- * Miroir de registre/valider_reference.mjs : JAMAIS de montants codes en dur.
- * Repere catalogue = Pin 40x50 (format minimum) ; triptyque = 3 x panneau.
- * Normalisation : 'canvas' / 'bache' ; 'americain'/'flottant' -> flottant sinon tendu.
- * Panneaux inconnu -> 1 (uni). Matiere inconnue -> throw actionnable (jamais de
- * defaut silencieux qui imiterait le rang 1 precedent).
+ * Tarifs v8 — chargement + garde de contrat.
+ * Les FORMULES vivent dans registre/formules_tarifs.mjs (implémentation Node
+ * unique, miroir de site-web/prix.js). Aucun montant codé en dur ici.
  */
-export function lireTauxTarifs(tarifsPath = path.join(ROOT_DIR, 'tarifs.json')) {
+export function lireTarifs(tarifsPath = path.join(ROOT_DIR, 'tarifs.json')) {
   if (!fs.existsSync(tarifsPath)) {
     throw new Error(`Tarifs introuvables : ${tarifsPath} — prix plancher incalculable, insertion refusee.`);
   }
   const tarifs = JSON.parse(fs.readFileSync(tarifsPath, 'utf-8'));
-  if (tarifs.version !== 'v7') {
-    throw new Error(`tarifs.json : version « ${tarifs.version || '(absente)'} » inattendue, attendu v7.`);
+  const etat = validerGrilleTarifs(tarifs);
+  if (!etat.ok) {
+    throw new Error(`tarifs.json v8 : ${etat.erreurs.join(' ; ')}.`);
   }
-  const TMP = tarifs.taux_matieres_premieres || {};
-  for (const cle of ['bache_m2', 'canvas_m2', 'cadre_pin_ml']) {
-    if (typeof TMP[cle] !== 'number') {
-      throw new Error(`tarifs.json v7 : taux_matieres_premieres.${cle} manquant ou non numerique.`);
-    }
+  return tarifs;
+}
+
+export function lireTauxTarifs(tarifsPath = path.join(ROOT_DIR, 'tarifs.json')) {
+  return lireTarifs(tarifsPath).taux_matieres_premieres;
+}
+
+export function formatReferenceTarifs(tarifs = lireTarifs()) {
+  const id = tarifs.reference_format || '80x120';
+  const format = (tarifs.formats || []).find((f) => String(f.id) === String(id));
+  if (!format || !Number.isFinite(Number(format.l_m)) || !Number.isFinite(Number(format.h_m))) {
+    throw new Error(`tarifs.json v8 : format de reference « ${id} » introuvable ou invalide.`);
   }
-  return TMP;
+  return format;
 }
 
 export function normaliserMatiereTarifs(label) {
-  const t = String(label || '').toLowerCase();
-  if (t.includes('canvas')) return 'canvas';
-  if (t.includes('bâche') || t.includes('bache')) return 'bache';
-  return null;
+  return normaliserMatiereFormule(label);
 }
 
 export function normaliserMontageTarifs(label) {
-  const t = String(label || '').toLowerCase();
-  return (t.includes('américain') || t.includes('americain') || t.includes('flottant')) ? 'flottant' : 'tendu';
+  return normaliserMontageFormule(label);
 }
 
-export function prixPlancherTarifs(matiereLabel, montageLabel, panneaux = 1) {
-  const TMP = lireTauxTarifs();
-  const arrondi5 = (v) => Math.round(v / 5) * 5;
-  const matiere = normaliserMatiereTarifs(matiereLabel);
+/**
+ * Prix d'une combinaison reelle, calcule depuis la grille v8.
+ * @param {string} matiereLabel
+ * @param {string} montageLabel
+ * @param {number} [panneaux]
+ * @param {string} [formatId] defaut : reference_format
+ * @param {object} [tarifs] grille deja lue (evite une relecture)
+ */
+export function prixCombinaisonTarifs(matiereLabel, montageLabel, panneaux = 1, formatId = null, tarifs = null) {
+  const grille = tarifs || lireTarifs();
+  const matiere = normaliserMatiereFormule(matiereLabel);
   if (!matiere) {
     throw new Error(`Matiere non reconnue pour le plancher tarifaire : « ${matiereLabel} » (attendu : bâche premium ou Toile Canvas).`);
   }
-  const montage = normaliserMontageTarifs(montageLabel);
-  const s = 0.40 * 0.50, p = 2 * (0.40 + 0.50); // repere Pin 40x50
-  const tauxM2 = matiere === 'bache' ? TMP.bache_m2 : TMP.canvas_m2;
-  let base = arrondi5(s * tauxM2);
-  if (montage === 'flottant') base = arrondi5(s * tauxM2 + p * TMP.cadre_pin_ml);
-  if (Number(panneaux) >= 3) base = base * 3;
-  return base;
+  const montage = normaliserMontageFormule(montageLabel);
+  const resultat = calculerPrixTarifs(grille, {
+    formatId: formatId || null,
+    support: matiere,
+    finition: montage,
+    triptyque: Number(panneaux) >= 3
+  });
+  return resultat.montant;
+}
+
+export function prixPlancherTarifs(matiereLabel, montageLabel, panneaux = 1, formatId = null) {
+  return prixCombinaisonTarifs(matiereLabel, montageLabel, panneaux, formatId);
+}
+
+/**
+ * Reference publique affichee sur les cartes : 80x120 bache tendue chassis pin.
+ * 335 MAD (ou 1005 MAD pour un triptyque 3 panneaux). Le champ `prix` de
+ * contenu.js reste, lui, le plancher reel de combinaison (70/140/210/420).
+ */
+export function prixReferenceTarifs(triptyque = false) {
+  return prixReferenceFormule(lireTarifs(), triptyque);
 }
 
 export function libellePrixPlancher(montant) {
@@ -1207,24 +1378,49 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
   nomInsere = nom;
   const desc = data.description || '';
   const cat = data.categorie || 'autres';
+  const type = data.type || cat;
   const style = data.style || 'traditionnel';
   const env = data.environnement || 'salon';
   const fallback = data.imageFallback || '🎨';
   // Prix/matiere JAMAIS herites (mission MICRO 26/09) : la fiche peut porter le
   // prix brut Groq (ex. 180 MAD, valeur de l'ancienne tete) — il est IGNORE et
   // recalcule comme plancher tarifs.json depuis la classification (matiere x
-  // montage x panneaux uni par defaut). Matiere inconnue -> throw (rollback).
+  // montage x panneaux). Matiere inconnue -> throw (rollback).
   const mat = data.materiauRecommande || 'Toile Canvas';
-  const montage = data.montageRecommande || 'Cadre Américain';
-  const plancherInsert = prixPlancherTarifs(mat, montage, 1);
-  const prix = libellePrixPlancher(plancherInsert);
-  const panneauxInsert = 1; // defaut uni explicite (champ lu par valider_reference.mjs)
+  const montage = data.montageRecommande || montagesAutorises()[0] || null;
+  if (!montage) {
+    throw new Error('Aucun montage exploitable dans contenu.js — insertion refusée.');
+  }
+  const panneauxDeclares = Number(data.panneaux);
+  const panneauxInsert = Number.isFinite(panneauxDeclares) && panneauxDeclares > 0
+    ? panneauxDeclares
+    : (data.triptyque === true || data.triptyque === 'true' ? 3 : 1);
+  // Le champ `panneaux` fait foi (D4) : 2/4 n'est JAMAIS écrasé ; la fiche est
+  // marquée metaIncertaine et une entrée d'alerte est journalisée.
+  const panneauxIncertaine = panneauxInsert !== 1 && panneauxInsert !== 3;
+  const triptyque = panneauxInsert === 3;
+  const metaIncertaine = data.metaIncertaine === true || data.metaIncertaine === 'true' || panneauxIncertaine;
+  if (panneauxIncertaine) {
+    journaliserAlerteFiche({
+      type: 'META_INCERTAINE',
+      date: new Date().toISOString(),
+      produit: 'produit-1',
+      nom,
+      panneaux: panneauxInsert,
+      motif: 'panneaux hors {1,3} — fiche marquée metaIncertaine, à arbitrer',
+      statut: 'alerte'
+    });
+  }
+  // `prix` de contenu.js = PLANCHER RÉEL de la combinaison (repère catalogue
+  // 40×50), jamais la référence publique 335/1005 calculée à l'affichage.
+  const prixPlancher = prixCombinaisonTarifs(mat, montage, panneauxInsert, FORMAT_PLANCHER);
+  const prix = libellePrixPlancher(prixPlancher);
   const badge = data.badge ? `"${data.badge}"` : 'null';
   const couleurs = Array.isArray(data.couleurs) ? data.couleurs : ['Beige', 'Doré', 'Noir'];
   const couleursStr = JSON.stringify(couleurs);
   const ambiance = data.ambiance || 'Chaleureuse et authentique';
 
-  const newBlock = `    {\n      nom: "${nom.replace(/"/g, '\\"')}",\n      description: "${desc.replace(/"/g, '\\"')}",\n      categorie: "${cat}",\n      style: "${style}",\n      environnement: "${env}",\n      image: "${targetImageRel}",\n      imageFallback: "${fallback}",\n      prix: "${prix}",\n      badge: ${badge},\n      materiauRecommande: "${mat}",\n      montageRecommande: "${montage}",\n      panneaux: ${panneauxInsert},\n      couleurs: ${couleursStr},\n      ambiance: "${ambiance.replace(/"/g, '\\"')}"\n    },`;
+  const newBlock = `    {\n      nom: "${nom.replace(/"/g, '\\"')}",\n      description: "${desc.replace(/"/g, '\\"')}",\n      categorie: "${cat}",\n      type: "${type}",\n      style: "${style}",\n      environnement: "${env}",\n      image: "${targetImageRel}",\n      imageFallback: "${fallback}",\n      prix: "${prix}",\n      badge: ${badge},\n      materiauRecommande: "${mat}",\n      montageRecommande: "${montage}",\n      panneaux: ${panneauxInsert},\n      triptyque: ${triptyque},\n      metaIncertaine: ${metaIncertaine},\n      couleurs: ${couleursStr},\n      ambiance: "${ambiance.replace(/"/g, '\\"')}"\n    },`;
 
   const match = content.match(/(produits\s*:\s*\[)/);
   if (!match) {
@@ -1245,9 +1441,9 @@ export function executeNodeShiftAndInsert(fichePath = FICHE_TXT) {
     const m1 = content.match(/produits\s*:\s*\[\s*\{([\s\S]*?)\n    \},/);
     const bloc1 = m1 ? m1[1] : '';
     const prixEcrit = (bloc1.match(/prix:\s*"([^"]+)"/) || [])[1] || '(absent)';
-    const prixAttendu = libellePrixPlancher(plancherInsert);
+    const prixAttendu = libellePrixPlancher(prixPlancher);
     if (prixEcrit !== prixAttendu) {
-      throw new Error(`Assertion prix/matiere ECHOUEE rang 1 : ecrit « ${prixEcrit} » (attendu « ${prixAttendu} » = plancher ${mat} x ${montage} x uni).`);
+      throw new Error(`Assertion prix ECHOUEE rang 1 : ecrit « ${prixEcrit} » (attendu « ${prixAttendu} » = plancher ${mat} x ${montage} x ${panneauxInsert} panneau(x), repère ${FORMAT_PLANCHER}).`);
     }
   }
   } catch (err) {
@@ -1364,6 +1560,24 @@ export function appendToJournal(entry) {
     fs.appendFileSync(JOURNAL_TXT, txtLine, 'utf-8');
   } catch (e) {
     console.error('Erreur écriture journal TXT:', e);
+  }
+}
+
+/**
+ * Alerte de fiche (metaIncertaine, panneaux hors {1,3}…) : entrée JSON seule,
+ * sans le gabarit TXT des insertions/remplacements.
+ */
+export function journaliserAlerteFiche(entry) {
+  try {
+    let history = [];
+    if (fs.existsSync(JOURNAL_JSON)) {
+      try { history = JSON.parse(fs.readFileSync(JOURNAL_JSON, 'utf-8')); } catch (e) { history = []; }
+    }
+    if (!Array.isArray(history)) history = [];
+    history.unshift(entry);
+    fs.writeFileSync(JOURNAL_JSON, JSON.stringify(history, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[journal] alerte fiche non écrite :', e.message);
   }
 }
 
@@ -1702,9 +1916,10 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
   // réinjectée TELLE QUELLE dans la fiche réécrite — l'édition ne peut plus
   // faire perdre panneaux/matière/montage ni aucun champ futur.
   const CLES_GABARIT = new Set([
-    'nom', 'description', 'categorie', 'style', 'environnement', 'image',
+    'nom', 'description', 'categorie', 'type', 'style', 'environnement', 'image',
     'imageFallback', 'prix', 'badge', 'materiauRecommande',
-    'montageRecommande', 'couleurs', 'ambiance'
+    'montageRecommande', 'panneaux', 'triptyque', 'metaIncertaine',
+    'couleurs', 'ambiance'
   ]);
   const blocExistant = bodyStart.slice(target.start, target.end);
   const propsPreservees = extrairePropsNiveau1(blocExistant)
@@ -1716,11 +1931,35 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
     ? `[${champs.couleurs.map((c) => `"${clean(c)}"`).join(', ')}]`
     : `["${clean(champs.couleurs)}"]`;
   const badge = champs.badge ? `"${clean(champs.badge)}"` : 'null';
+  const type = champs.type || oldProduct.type || champs.categorie || oldProduct.categorie || 'autres';
+  const panneaux = Number.isFinite(Number(champs.panneaux)) && Number(champs.panneaux) > 0
+    ? Number(champs.panneaux)
+    : (Number.isFinite(Number(oldProduct.panneaux)) && Number(oldProduct.panneaux) > 0
+      ? Number(oldProduct.panneaux)
+      : (oldProduct.triptyque ? 3 : 1));
+  // `panneaux` fait foi (D4) : 1 ⇒ uni, 3 ⇒ triptyque, 2/4 ⇒ incertain (jamais écrasé).
+  const panneauxIncertaine = panneaux !== 1 && panneaux !== 3;
+  const triptyque = panneaux === 3;
+  const metaIncertaine = (champs.metaIncertaine != null
+    ? (champs.metaIncertaine === true || champs.metaIncertaine === 'true')
+    : oldProduct.metaIncertaine === true) || panneauxIncertaine;
+  if (panneauxIncertaine) {
+    journaliserAlerteFiche({
+      type: 'META_INCERTAINE',
+      date: new Date().toISOString(),
+      produit: 'produit-' + productRank,
+      nom: champs.nom || oldProduct.nom || null,
+      panneaux,
+      motif: 'panneaux hors {1,3} — fiche marquée metaIncertaine, à arbitrer',
+      statut: 'alerte'
+    });
+  }
 
   const fields = [
     `nom: "${clean(champs.nom)}"`,
     `description: "${clean(champs.description)}"`,
     `categorie: "${clean(champs.categorie)}"`,
+    `type: "${clean(type)}"`,
     `style: "${clean(champs.style)}"`,
     `environnement: "${clean(champs.environnement)}"`,
     `image: "${newImageRel || (oldProduct.image || `images/produit-${productRank}.jpg`)}"`,
@@ -1729,6 +1968,9 @@ export function rewriteProductAtRank(productRank, champs, newImageRel) {
     `badge: ${badge}`,
     `materiauRecommande: "${clean(champs.materiauRecommande)}"`,
     `montageRecommande: "${clean(champs.montageRecommande)}"`,
+    `panneaux: ${panneaux}`,
+    `triptyque: ${triptyque}`,
+    `metaIncertaine: ${metaIncertaine}`,
     `couleurs: ${couleurs}`,
     `ambiance: "${clean(champs.ambiance)}"`
   ];

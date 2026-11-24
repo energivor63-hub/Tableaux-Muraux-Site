@@ -1,0 +1,118 @@
+{
+  "version": "v8",
+  "edition": "2026-11-23",
+  "validite_jours": 30,
+  "devise": "MAD",
+  "reference_format": "80x120",
+  "bois_actif": "pin",
+  "bois_prepares": [
+    "hetre",
+    "chene"
+  ],
+  "taux_matieres_premieres": {
+    "bache_m2": 350,
+    "canvas_m2": 600,
+    "cadre_pin_ml": 40,
+    "cadre_hetre_ml": 60,
+    "cadre_chene_ml": 85
+  },
+  "parametres_internes": {
+    "bois_meta": {
+      "pin": {
+        "label": "Pin",
+        "densite": "≈ 0,50 g/cm³",
+        "traits": "léger et chaleureux — finition standard"
+      },
+      "hetre": {
+        "label": "Hêtre",
+        "densite": "≈ 0,70 g/cm³",
+        "traits": "grain fin, rendu élégant — bois mi-dur"
+      },
+      "chene": {
+        "label": "Chêne",
+        "densite": "≈ 0,75 g/cm³",
+        "traits": "bois noble au veinage marqué — finition premium"
+      }
+    }
+  },
+  "formats": [
+    {
+      "id": "30x40",
+      "label": "30 × 40 cm",
+      "l_m": 0.3,
+      "h_m": 0.4
+    },
+    {
+      "id": "40x50",
+      "label": "40 × 50 cm",
+      "l_m": 0.4,
+      "h_m": 0.5
+    },
+    {
+      "id": "50x70",
+      "label": "50 × 70 cm",
+      "l_m": 0.5,
+      "h_m": 0.7
+    },
+    {
+      "id": "60x80",
+      "label": "60 × 80 cm",
+      "l_m": 0.6,
+      "h_m": 0.8
+    },
+    {
+      "id": "80x120",
+      "label": "80 × 120 cm",
+      "l_m": 0.8,
+      "h_m": 1.2
+    },
+    {
+      "id": "100x150",
+      "label": "100 × 150 cm",
+      "l_m": 1,
+      "h_m": 1.5
+    }
+  ],
+  "supports": [
+    {
+      "id": "bache",
+      "label": "Bâche premium",
+      "taux": "bache_m2"
+    },
+    {
+      "id": "canvas",
+      "label": "Toile canvas",
+      "taux": "canvas_m2"
+    }
+  ],
+  "finitions": [
+    {
+      "id": "tendu",
+      "label": "Tendu sur châssis",
+      "taux_cadre": null
+    },
+    {
+      "id": "flottant",
+      "label": "Cadre américain pin",
+      "taux_cadre": "cadre_pin_ml"
+    }
+  ],
+  "regles": {
+    "single": "arrondi5(surface_m2 × taux_matieres_premieres.<bache|canvas>_m2)",
+    "cadre_flottant": "arrondi5(surface_m2 × taux_matieres_premieres.<bache|canvas>_m2 + périmetre_m × taux_matieres_premieres.cadre_<pin|hetre|chene>_ml)",
+    "triptyque": "3 × prix du panneau (panneau déjà arrondi, assemblage et repères d'alignement inclus)",
+    "panoramique": "sur demande — devis 24 h",
+    "personnalise": "interne : surface × taux matière + périmètre × taux cadre, arrondi multiple de 5"
+  },
+  "services_inclus": [
+    "Création sur demande par sujet : 2 propositions + 1 révision (révision supp. +50 MAD)",
+    "Projection visuelle de l'œuvre dans votre espace sur photo, sans engagement",
+    "Livraison à domicile sans installation"
+  ],
+  "mentions": [
+    "TVA non applicable — auto-entrepreneur",
+    "Prix valables 30 jours à compter de la date d'édition",
+    "Format minimum : 30 × 40 cm",
+    "Cette édition annule et remplace les précédentes"
+  ]
+}
