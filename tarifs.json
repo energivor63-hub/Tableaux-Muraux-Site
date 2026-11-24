@@ -1,6 +1,6 @@
 {
   "version": "v8",
-  "edition": "2026-11-23",
+  "edition": "2026-11-25",
   "validite_jours": 30,
   "devise": "MAD",
   "reference_format": "80x120",
@@ -36,12 +36,6 @@
     }
   },
   "formats": [
-    {
-      "id": "30x40",
-      "label": "30 × 40 cm",
-      "l_m": 0.3,
-      "h_m": 0.4
-    },
     {
       "id": "40x50",
       "label": "40 × 50 cm",
@@ -112,7 +106,7 @@
   "mentions": [
     "TVA non applicable — auto-entrepreneur",
     "Prix valables 30 jours à compter de la date d'édition",
-    "Format minimum : 30 × 40 cm",
+    "Format minimum : 40 × 50 cm",
     "Cette édition annule et remplace les précédentes"
   ]
 }
