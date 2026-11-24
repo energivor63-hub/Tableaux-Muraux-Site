@@ -75,11 +75,20 @@ if (!fs.existsSync(STAGING_DIR)) {
   fs.mkdirSync(STAGING_DIR, { recursive: true });
 }
 
-// Taxonomies officielles de TableauxMuraux_Site (définies dans contenu.js)
-export const ALLOWED_CATEGORIES = ["abstrait", "paysages", "calligraphie", "moderne", "geometrique", "floral", "autres"];
-export const ALLOWED_STYLES = ["contemporain", "traditionnel", "minimaliste", "boheme", "art-deco", "autres"];
-export const ALLOWED_ENVIRONNEMENTS = ["salon", "chambre", "bureau", "entree", "riad", "cabinet", "ecole-primaire", "autres"];
-export const ALLOWED_MATERIAUX = ["Toile Canvas", "bâche premium"];
+// Taxonomies officielles : DÉRIVÉES de contenu.js à l'exécution (D3).
+export function categoriesAutorisees() {
+  return analyserCatalogue(getCurrentCatalog()).types.map((t) => t.id);
+}
+export function stylesAutorises() {
+  return analyserCatalogue(getCurrentCatalog()).groupes.style.map((s) => s.id);
+}
+export function environnementsAutorises() {
+  return analyserCatalogue(getCurrentCatalog()).groupes.env.map((e) => e.id);
+}
+// Matériaux autorisés : DÉRIVÉS de tarifs.supports (zéro liste en dur).
+export function materiauxAutorises() {
+  return lireTarifs().supports.map((support) => support.label);
+}
 // ⚠️ ALLOWED_MONTAGES supprimé (dette P1) : les montages autorisés sont
 // dérivés à l'exécution depuis contenu.js via catalogue-meta.js.
 
@@ -516,13 +525,18 @@ export function parseVisionChamps(parsed) {
   const typeValide = Boolean(typeRaw) && typeNormalise !== 'autres';
   const type = typeValide ? typeNormalise : 'autres';
 
+  // Taxonomies DÉRIVÉES du contenu.js courant (aucune liste en dur).
+  const categories = categoriesAutorisees();
+  const styles = stylesAutorises();
+  const environnements = environnementsAutorises();
+
   // `categorie` reste la taxonomie historique éditoriale ; un type inédit
   // n'est pas injecté de force dans cette liste fermée.
-  const categorie = ALLOWED_CATEGORIES.includes(type)
+  const categorie = categories.includes(type)
     ? type
-    : normalizeTaxonomy(parsed.cat || parsed.categorie, ALLOWED_CATEGORIES, 'autres');
-  const style = normalizeTaxonomy(parsed.style, ALLOWED_STYLES, 'traditionnel');
-  const environnement = normalizeTaxonomy(parsed.env || parsed.environnement, ALLOWED_ENVIRONNEMENTS, 'salon');
+    : normalizeTaxonomy(parsed.cat || parsed.categorie, categories, 'autres');
+  const style = normalizeTaxonomy(parsed.style, styles, 'traditionnel');
+  const environnement = normalizeTaxonomy(parsed.env || parsed.environnement, environnements, 'salon');
 
   const matRaw = String(parsed.mat || parsed.materiauRecommande || '').toLowerCase();
   let materiauRecommande = 'Toile Canvas';

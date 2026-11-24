@@ -273,6 +273,11 @@
         .couleur-tag { padding: 0.2rem 0.6rem; background: white; border: 1px solid #e5e5e5; border-radius: 50px; font-size: 0.7rem; color: var(--gray); }
         .gallery-footer { display: flex; justify-content: space-between; align-items: center; }
         .gallery-price { font-size: 1.1rem; font-weight: 700; color: var(--dark); letter-spacing: 2px; font-family: 'Playfair Display', serif; }
+        .gallery-price.sur-demande { font-size: .95rem; letter-spacing: 1px; }
+        .gallery-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: .55rem; margin: .8rem 0 .6rem; }
+        .gallery-options label { display: flex; flex-direction: column; gap: .2rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: #6B7280; }
+        .gallery-options select { padding: .38rem .45rem; border: 1px solid #D9D2C5; border-radius: 7px; background: #fff; color: var(--dark); font-size: .82rem; font-family: inherit; }
+        .gallery-options .opt-triptyque { flex-direction: row; align-items: center; gap: .45rem; grid-column: 1 / -1; text-transform: none; letter-spacing: 0; font-size: .8rem; font-weight: 600; color: var(--dark); }
         .gallery-reference { text-align: center; color: #6B7280; margin: .6rem auto 1.4rem; font-size: .95rem; max-width: 760px; }
         .gallery-price.masque { color: var(--gray); font-style: italic; font-size: 1rem; letter-spacing: 2px; font-weight: 500; }
         .gallery-action { background: var(--dark); color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 50px; cursor: pointer; font-size: 0.9rem; transition: all 0.3s; display: flex; align-items: center; gap: 0.5rem; }
@@ -525,6 +530,7 @@
                 <li><a href="#materials" data-contenu="nav.linkMaterials">Matériaux</a></li>
                 <li><a href="#montage" data-contenu="nav.linkMontage">Finitions</a></li>
                 <li><a href="#gallery" data-contenu="nav.linkGallery">Galerie</a></li>
+                <li><a href="tarifs.html" data-contenu="nav.linkTarifs">Tarifs</a></li>
                 <li><a href="#testimonials" data-contenu="nav.linkTestimonials">Avis</a></li>
                 <li><a href="#contact" class="btn-nav" data-contenu="nav.btnOrder">Commander</a></li>
             </ul>
@@ -664,38 +670,16 @@
                 </a>
             </div>
             <div class="gallery-filters">
-                <div class="filter-group">
+                <!-- Filtres construits À L'EXÉCUTION depuis catalogue-meta.js
+                     (aucune catégorie/style/environnement codé en dur). -->
+                <div class="filter-group" data-filter-group="category">
                     <span class="filter-group-label" data-contenu="gallery.filterCategoryLabel">Catégorie</span>
-                    <button class="filter-btn active" data-filter-type="category" data-filter="all">Tous</button>
-                    <button class="filter-btn" data-filter-type="category" data-filter="abstrait">Abstrait</button>
-                    <button class="filter-btn" data-filter-type="category" data-filter="paysage">Paysages</button>
-                    <button class="filter-btn" data-filter-type="category" data-filter="calligraphie">Calligraphie</button>
-                    <button class="filter-btn" data-filter-type="category" data-filter="moderne">Moderne</button>
-                    <button class="filter-btn" data-filter-type="category" data-filter="geometrique">Géométrique</button>
-                    <button class="filter-btn" data-filter-type="category" data-filter="floral">Floral</button>
-                    <button class="filter-btn" data-filter-type="category" data-filter="autres">Autres</button>
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" data-filter-group="style">
                     <span class="filter-group-label" data-contenu="gallery.filterStyleLabel">Style</span>
-                    <button class="filter-btn active" data-filter-type="style" data-filter="all">Tous</button>
-                    <button class="filter-btn" data-filter-type="style" data-filter="contemporain">Contemporain</button>
-                    <button class="filter-btn" data-filter-type="style" data-filter="traditionnel">Traditionnel</button>
-                    <button class="filter-btn" data-filter-type="style" data-filter="minimaliste">Minimaliste</button>
-                    <button class="filter-btn" data-filter-type="style" data-filter="boheme">Bohème</button>
-                    <button class="filter-btn" data-filter-type="style" data-filter="art-deco">Art Déco</button>
-                    <button class="filter-btn" data-filter-type="style" data-filter="autres">Autres</button>
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" data-filter-group="env">
                     <span class="filter-group-label" data-contenu="gallery.filterEnvLabel">Environnement</span>
-                    <button class="filter-btn active" data-filter-type="env" data-filter="all">Tous</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="salon">Salon</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="chambre">Chambre</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="bureau">Bureau</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="entree">Entrée</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="riad">Riad</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="cabinet">Cabinet</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="ecole-primaire">École primaire</button>
-                    <button class="filter-btn" data-filter-type="env" data-filter="autres">Autres</button>
                 </div>
             </div>
             <div class="gallery-grid" id="gallery-grid"></div>
@@ -785,6 +769,7 @@
             <div class="footer-pages">
                 <a href="process.html">Notre Processus</a>
                 <a href="materials.html">Matériaux</a>
+                <a href="tarifs.html">Tarifs</a>
                 <a href="privacy.html">Politique de confidentialité</a>
             </div>
             <div class="footer-bottom" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
@@ -1124,6 +1109,54 @@
     // Ancre native #oeuvre-<slug> : le slug vient de catalogue-meta.js
     // (implémentation unique, homonymes suffixés -2). index.html ne le
     // recalcule plus (D4 : le nom prime sur le rang).
+
+    /** Options d'un <select> construites depuis tarifs.json (zéro liste en dur). */
+    function optionsSelectHtml(items, selectionne, classe) {
+        return `<select class="${classe}">` + (items || []).map((item) => {
+            const sel = String(item.id) === String(selectionne) ? ' selected' : '';
+            return `<option value="${item.id}"${sel}>${item.label}</option>`;
+        }).join('') + `</select>`;
+    }
+
+    /** Combinaison sélectionnée sur une carte (valeurs lues dans le DOM). */
+    function optionsDeCarte(carte) {
+        const lire = (selecteur) => {
+            const el = carte.querySelector(selecteur);
+            return el ? el.value : null;
+        };
+        const caseTriptyque = carte.querySelector('.opt-triptyque-case');
+        return {
+            formatId: lire('.opt-format'),
+            support: lire('.opt-support'),
+            finition: lire('.opt-finition'),
+            triptyque: caseTriptyque ? caseTriptyque.checked : false
+        };
+    }
+
+    /** Filtres catégorie/style/environnement construits depuis catalogue-meta. */
+    function rendreFiltres(analyse) {
+        const groupes = {
+            category: analyse.groupes.type,
+            style: analyse.groupes.style,
+            env: analyse.groupes.env
+        };
+        document.querySelectorAll('[data-filter-group]').forEach((groupe) => {
+            const type = groupe.dataset.filterGroup;
+            groupe.querySelectorAll('.filter-btn').forEach((btn) => btn.remove());
+            const items = [{ id: 'all', label: 'Tous' }].concat(
+                (groupes[type] || []).map((entree) => ({ id: entree.id, label: entree.label }))
+            );
+            items.forEach((item, position) => {
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn' + (position === 0 ? ' active' : '');
+                btn.dataset.filterType = type;
+                btn.dataset.filter = item.id;
+                btn.textContent = item.label;
+                groupe.appendChild(btn);
+            });
+        });
+    }
+
     function rendreGalerie() {
         const tarifs = (typeof Tarifs !== 'undefined' && typeof Tarifs.actuels === 'function')
             ? Tarifs.actuels() : null;
@@ -1133,11 +1166,13 @@
         }
 
         const analyse = CatalogueMeta.analyserCatalogue(CONTENU_SITE);
-        const slugParIndex = new Map(analyse.produits.map(f => [f.index, f.slug]));
+        const ficheParIndex = new Map(analyse.produits.map((f) => [f.index, f]));
+        rendreFiltres(analyse);
+        const combinaisonReference = tarifs ? Prix.optionsReference(tarifs) : null;
 
         // 🔒 Filtre de sécurité : exclut tout produit sans image OU utilisant le placeholder produit-0
         //    (produit-0.jpg doit rester vide et invisible pour les clients).
-        //    L'index d'origine est conservé pour retrouver le slug.
+        //    L'index d'origine est conservé pour retrouver le slug et le produit.
         const entreesVisibles = CONTENU_SITE.produits
             .map((p, index) => ({ p, index }))
             .filter(({ p }) => {
@@ -1145,14 +1180,38 @@
                 if (/\bproduit-0\.\w+$/.test(p.image)) return false;
                 return true;
             });
+        const produitParIndex = new Map(entreesVisibles.map(({ p, index }) => [index, p]));
 
         document.getElementById('gallery-grid').innerHTML = entreesVisibles.map(({ p, index }) => {
-            const prixMasque = Prix.prixEstMasque(p);
-            // Offre publique : 335 MAD (ou 1005 triptyque) ; metaIncertaine ⇒ « Sur demande ».
-            const prixCarte = Prix.prixCarte(p, tarifs) || Prix.prixAffiche(p);
-            const surDemande = prixCarte === Prix.MENTION_SUR_DEMANDE;
+            const fiche = ficheParIndex.get(index);
+            const surDemande = Prix.estIncertaine(p);
+            const triptyqueDisponible = Prix.optionTriptyqueDisponible(p);
+            let prixTexte = Prix.prixAffiche(p);
+            let optionsHtml = '';
+
+            if (surDemande) {
+                prixTexte = Prix.MENTION_SUR_DEMANDE;
+            } else if (tarifs && combinaisonReference) {
+                // Défaut : format de référence, bâche, tendu ; triptyque coché
+                // d'office pour une œuvre à 3 panneaux (prix ×3).
+                const calcul = Prix.calculerPrix(tarifs, {
+                    formatId: combinaisonReference.formatId,
+                    support: combinaisonReference.support,
+                    finition: combinaisonReference.finition,
+                    triptyque: triptyqueDisponible
+                });
+                prixTexte = calcul.montant + ' MAD';
+                optionsHtml = `
+                <div class="gallery-options">
+                    <label><span>Format</span>${optionsSelectHtml(tarifs.formats, combinaisonReference.formatId, 'opt-format')}</label>
+                    <label><span>Support</span>${optionsSelectHtml(tarifs.supports, combinaisonReference.support, 'opt-support')}</label>
+                    <label><span>Finition</span>${optionsSelectHtml(tarifs.finitions, combinaisonReference.finition, 'opt-finition')}</label>
+                    ${triptyqueDisponible ? '<label class="opt-triptyque"><input type="checkbox" class="opt-triptyque-case" checked> Triptyque (3 panneaux)</label>' : ''}
+                </div>`;
+            }
+
             return `
-        <div class="gallery-item" id="oeuvre-${slugParIndex.get(index)}" data-category="${p.categorie}" data-style="${p.style || ''}" data-env="${p.environnement || ''}">
+        <div class="gallery-item" data-index="${index}" id="oeuvre-${fiche.slug}" data-category="${fiche.type}" data-style="${fiche.style || ''}" data-env="${fiche.environnement || ''}">
             <div class="gallery-image ${p.image ? '' : 'fallback'}" data-img="${p.image}" data-fallback="${p.imageFallback || '🎨'}">
                 ${p.badge ? `<span class="gallery-badge">${p.badge}</span>` : ''}
             </div>
@@ -1172,8 +1231,9 @@
                     </div>
                 ` : ''}
                 ${p.ambiance ? `<div class="gallery-ambiance">✨ ${p.ambiance}</div>` : ''}
+                ${optionsHtml}
                 <div class="gallery-footer">
-                    <span class="gallery-price ${prixMasque ? 'masque' : ''} ${surDemande ? 'sur-demande' : ''}">${prixCarte}</span>
+                    <span class="gallery-price ${Prix.prixEstMasque(p) ? 'masque' : ''} ${surDemande ? 'sur-demande' : ''}">${prixTexte}</span>
                     <button class="gallery-action" data-product="${p.nom}">Commander</button>
                 </div>
             </div>
@@ -1195,12 +1255,34 @@
             }
         });
 
-        // Boutons "Commander" dans la galerie
-        document.querySelectorAll('.gallery-action[data-product]').forEach(btn => {
-            btn.addEventListener('click', function(e) {
+        // Sélecteurs : prix recalculé en direct + message WhatsApp de la combinaison.
+        document.querySelectorAll('.gallery-item').forEach((carte) => {
+            const produit = produitParIndex.get(Number(carte.dataset.index));
+            if (!produit) return;
+
+            const majPrix = () => {
+                if (!tarifs || Prix.estIncertaine(produit)) return;
+                try {
+                    const montant = Prix.calculerPrix(tarifs, optionsDeCarte(carte)).montant;
+                    const elPrix = carte.querySelector('.gallery-price');
+                    elPrix.textContent = montant + ' MAD';
+                    elPrix.classList.remove('sur-demande');
+                } catch (err) {
+                    console.warn('[prix] combinaison invalide :', err.message);
+                }
+            };
+            carte.querySelectorAll('.opt-format, .opt-support, .opt-finition, .opt-triptyque-case')
+                .forEach((el) => el.addEventListener('change', majPrix));
+
+            carte.querySelector('.gallery-action').addEventListener('click', (e) => {
                 e.stopPropagation();
-                const productName = this.dataset.product;
-                const message = `Je suis intéressé(e) par le tableau "${productName}". Pouvez-vous me donner plus d'informations ?`;
+                let message;
+                if (tarifs && !Prix.estIncertaine(produit)) {
+                    message = Prix.messageOffre(produit, tarifs, optionsDeCarte(carte));
+                } else {
+                    message = `Je suis intéressé(e) par le tableau "${produit.nom}". Pouvez-vous me donner plus d'informations ?`;
+                }
+                // UN SEUL encodeURIComponent : buildWhatsAppLink.
                 window.open(buildWhatsAppLink(message), '_blank');
             });
         });
@@ -1311,35 +1393,19 @@
         document.getElementById('nav-links').classList.toggle('active');
     });
 
-    // ═══ GALLERY FILTER ═══
-    const filterBtns = document.querySelectorAll('.filter-btn');
+    // ═══ GALLERY FILTER (valeurs construites à l'exécution) ═══
     const activeFilters = { category: 'all', style: 'all', env: 'all' };
 
-    // Listes des valeurs prédéfinies (pour détecter "Autres" : produits hors liste)
-    const listesDefinies = {
-        category: ['abstrait', 'paysage', 'calligraphie', 'moderne', 'geometrique', 'floral'],
-        style: ['contemporain', 'traditionnel', 'minimaliste', 'boheme', 'art-deco'],
-        env: ['salon', 'chambre', 'bureau', 'entree', 'riad', 'cabinet', 'ecole-primaire']
-    };
-
-    function matchFilter(valeurProduit, valeurFiltre, groupe) {
-        if (valeurFiltre === 'all') return true;             // "Tous" : affiche tout
-        if (valeurFiltre === 'autres') {                      // "Autres" : valeurs hors liste prédéfinie
-            return !listesDefinies[groupe].includes(valeurProduit);
-        }
-        return valeurProduit === valeurFiltre;                // Valeur précise
+    function matchFilter(valeurProduit, valeurFiltre) {
+        if (valeurFiltre === 'all') return true;
+        return valeurProduit === valeurFiltre;
     }
 
     function applyFilters() {
         document.querySelectorAll('.gallery-item').forEach(item => {
-            const cat = item.dataset.category;
-            const style = item.dataset.style;
-            const env = item.dataset.env;
-
-            const show = matchFilter(cat, activeFilters.category, 'category')
-                      && matchFilter(style, activeFilters.style, 'style')
-                      && matchFilter(env, activeFilters.env, 'env');
-
+            const show = matchFilter(item.dataset.category, activeFilters.category)
+                      && matchFilter(item.dataset.style, activeFilters.style)
+                      && matchFilter(item.dataset.env, activeFilters.env);
             item.style.display = show ? 'block' : 'none';
         });
         updateVitrineLink();
@@ -1352,10 +1418,7 @@
         const params = new URLSearchParams();
         params.set('mode', 'vitrine');
         params.set('loop', '1');
-        if (activeFilters.category !== 'all') {
-            const alias = { paysage: 'paysages', paysages: 'paysages' };
-            params.set('collection', alias[activeFilters.category] || activeFilters.category);
-        }
+        if (activeFilters.category !== 'all') params.set('collection', activeFilters.category);
         if (activeFilters.style !== 'all') params.set('style', activeFilters.style);
         if (activeFilters.env !== 'all') params.set('env', activeFilters.env);
         link.href = 'showcase.html?' + params.toString();
@@ -1363,10 +1426,13 @@
 
     updateVitrineLink();
 
-    filterBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            const type = this.dataset.filterType;
-            const value = this.dataset.filter;
+    // Délégation : les boutons sont créés après le rendu (catalogue-meta).
+    document.querySelectorAll('.filter-group').forEach((groupe) => {
+        groupe.addEventListener('click', function (e) {
+            const btn = e.target.closest('.filter-btn');
+            if (!btn) return;
+            const type = btn.dataset.filterType;
+            const value = btn.dataset.filter;
 
             // Mise à jour visuelle (seuls les boutons du même type sont désactivés)
             document.querySelectorAll(`.filter-btn[data-filter-type="${type}"]`).forEach(b => b.classList.remove('active'));
@@ -1377,7 +1443,7 @@
                 const tousBtn = document.querySelector(`.filter-btn[data-filter-type="${type}"][data-filter="all"]`);
                 if (tousBtn) tousBtn.classList.add('active');
             } else {
-                this.classList.add('active');
+                btn.classList.add('active');
                 activeFilters[type] = value;
             }
 

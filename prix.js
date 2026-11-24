@@ -20,7 +20,6 @@
     var MENTION_SUR_DEMANDE = 'Sur demande';
     var ARRONDI = 5;
     var MULTIPLICATEUR_TRIPTYQUE = 3;
-    var FORMAT_REFERENCE_DEFAUT = '80x120';
 
     /** Prix brut nettoyé (chaîne vide si absent ou non textuel). */
     function prixBrut(produit) {
@@ -48,7 +47,8 @@
 
     function formatDe(tarifs, id) {
         if (!tarifs || !Array.isArray(tarifs.formats)) return null;
-        var cible = String(id || tarifs.reference_format || FORMAT_REFERENCE_DEFAUT);
+        var cible = String(id || tarifs.reference_format || '');
+        if (!cible) return null;
         return tarifs.formats.find(function (f) {
             return String(f.id) === cible || String(f.label) === cible;
         }) || null;
@@ -122,7 +122,7 @@
     /** Prix de référence : 80×120 bâche tendue châssis pin (335 / 1005 MAD). */
     function prixReference(tarifs, triptyque) {
         return calculerPrix(tarifs, {
-            formatId: (tarifs && tarifs.reference_format) || FORMAT_REFERENCE_DEFAUT,
+            formatId: tarifs && tarifs.reference_format,
             support: 'bache',
             finition: 'tendu',
             triptyque: Boolean(triptyque)
@@ -136,17 +136,32 @@
 
     /** Mention exacte affichée sous la galerie. */
     function mentionReference(tarifs) {
-        var format = formatDe(tarifs, (tarifs && tarifs.reference_format) || FORMAT_REFERENCE_DEFAUT);
+        var format = formatDe(tarifs, tarifs && tarifs.reference_format);
         return libelleReference(tarifs, false)
-            + ' — format ' + (format ? format.label : '80 × 120 cm')
+            + ' — format ' + (format ? format.label : '')
             + ', bâche tendue sur châssis pin · autres formats et finitions disponibles';
     }
 
     /** Libellé exact de l'option triptyque. */
     function libelleTriptyque(tarifs) {
-        var format = formatDe(tarifs, (tarifs && tarifs.reference_format) || FORMAT_REFERENCE_DEFAUT);
+        var format = formatDe(tarifs, tarifs && tarifs.reference_format);
         if (!format) throw new Error('Format de référence introuvable.');
         return 'Triptyque — 3 panneaux de ' + format.label + ' chacun';
+    }
+
+    /** Combinaison de référence (format de référence, bâche, tendu). */
+    function optionsReference(tarifs) {
+        if (!tarifs) return null;
+        var support = (tarifs.supports || []).find(function (s) { return s.taux === 'bache_m2'; })
+            || (tarifs.supports || [])[0];
+        var finition = (tarifs.finitions || []).find(function (f) { return f.taux_cadre == null; })
+            || (tarifs.finitions || [])[0];
+        if (!support || !finition) return null;
+        return {
+            formatId: tarifs.reference_format,
+            support: support.id,
+            finition: finition.id
+        };
     }
 
     /** Panneaux explicites : nombre > 0, sinon null. */
@@ -190,7 +205,7 @@
         var opts = options || {};
         var triptyque = opts.triptyque != null ? Boolean(opts.triptyque) : estTriptyqueProduit(produit);
         var calcul = calculerPrix(tarifs, {
-            formatId: opts.formatId || (tarifs && tarifs.reference_format) || FORMAT_REFERENCE_DEFAUT,
+            formatId: opts.formatId || (tarifs && tarifs.reference_format),
             support: opts.support || 'bache',
             finition: opts.finition || 'tendu',
             triptyque: triptyque
@@ -202,6 +217,24 @@
         return 'Je suis intéressé(e) par « ' + nom + ' » — '
             + designation + ', ' + calcul.support.label + ', '
             + calcul.finition.label + ' : ' + calcul.montant + ' MAD.';
+    }
+
+    /** Message générique d'une combinaison (page tarifs) — NON encodé. */
+    function messageCombinaison(tarifs, options) {
+        var opts = options || {};
+        var triptyque = Boolean(opts.triptyque);
+        var calcul = calculerPrix(tarifs, {
+            formatId: opts.formatId || (tarifs && tarifs.reference_format),
+            support: opts.support || 'bache',
+            finition: opts.finition || 'tendu',
+            triptyque: triptyque
+        });
+        var designation = triptyque
+            ? libelleTriptyque(tarifs)
+            : calcul.format.label;
+        return 'Je souhaite commander : ' + designation + ', '
+            + calcul.support.label + ', ' + calcul.finition.label
+            + ' — ' + calcul.montant + ' MAD.';
     }
 
     var api = {
@@ -219,12 +252,14 @@
         libelleReference: libelleReference,
         mentionReference: mentionReference,
         libelleTriptyque: libelleTriptyque,
+        optionsReference: optionsReference,
         panneauxDe: panneauxDe,
         estTriptyqueProduit: estTriptyqueProduit,
         optionTriptyqueDisponible: optionTriptyqueDisponible,
         estIncertaine: estIncertaine,
         prixCarte: prixCarte,
-        messageOffre: messageOffre
+        messageOffre: messageOffre,
+        messageCombinaison: messageCombinaison
     };
 
     global.Prix = api;
