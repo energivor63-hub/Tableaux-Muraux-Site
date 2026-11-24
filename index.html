@@ -273,6 +273,8 @@
         .couleur-tag { padding: 0.2rem 0.6rem; background: white; border: 1px solid #e5e5e5; border-radius: 50px; font-size: 0.7rem; color: var(--gray); }
         .gallery-footer { display: flex; justify-content: space-between; align-items: center; }
         .gallery-price { font-size: 1.1rem; font-weight: 700; color: var(--dark); letter-spacing: 2px; font-family: 'Playfair Display', serif; }
+        .gallery-item { scroll-margin-top: 96px; }
+        .gallery-item.cible-ancre { outline: 3px solid var(--primary); outline-offset: 6px; box-shadow: 0 0 0 8px rgba(198, 93, 59, .16); transition: outline-color .25s ease, box-shadow .25s ease; }
         .gallery-price.sur-demande { font-size: .95rem; letter-spacing: 1px; }
         .gallery-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: .55rem; margin: .8rem 0 .6rem; }
         .gallery-options label { display: flex; flex-direction: column; gap: .2rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: #6B7280; }
@@ -1200,7 +1202,7 @@
                     finition: combinaisonReference.finition,
                     triptyque: triptyqueDisponible
                 });
-                prixTexte = calcul.montant + ' MAD';
+                prixTexte = 'Prix ' + calcul.montant + ' MAD';
                 optionsHtml = `
                 <div class="gallery-options">
                     <label><span>Format</span>${optionsSelectHtml(tarifs.formats, combinaisonReference.formatId, 'opt-format')}</label>
@@ -1260,12 +1262,17 @@
             const produit = produitParIndex.get(Number(carte.dataset.index));
             if (!produit) return;
 
+            // Le bloc sélecteurs (labels, selects, option triptyque) ne doit
+            // JAMAIS propager un clic vers le lightbox de la galerie.
+            const blocOptions = carte.querySelector('.gallery-options');
+            if (blocOptions) blocOptions.addEventListener('click', (e) => e.stopPropagation());
+
             const majPrix = () => {
                 if (!tarifs || Prix.estIncertaine(produit)) return;
                 try {
                     const montant = Prix.calculerPrix(tarifs, optionsDeCarte(carte)).montant;
                     const elPrix = carte.querySelector('.gallery-price');
-                    elPrix.textContent = montant + ' MAD';
+                    elPrix.textContent = 'Prix ' + montant + ' MAD';
                     elPrix.classList.remove('sur-demande');
                 } catch (err) {
                     console.warn('[prix] combinaison invalide :', err.message);
@@ -1286,7 +1293,36 @@
                 window.open(buildWhatsAppLink(message), '_blank');
             });
         });
+
+        // Le saut natif du navigateur a eu lieu AVANT l'injection des cartes :
+        // on rejoue l'ancrage une fois la galerie réellement dans le DOM.
+        if (window.location.hash.indexOf('#oeuvre-') === 0) allerVersAncre();
     }
+
+    /** Surbrillance temporaire de l'œuvre ciblée par l'ancre. */
+    function mettreEnEvidenceAncre(cible) {
+        if (!cible) return;
+        cible.classList.remove('cible-ancre');
+        cible.classList.add('cible-ancre');
+        clearTimeout(cible.__ancreTimer);
+        cible.__ancreTimer = setTimeout(() => cible.classList.remove('cible-ancre'), 1800);
+    }
+
+    /** Ancre #oeuvre-<slug> : scroll + surbrillance, sans crash si inconnue. */
+    function allerVersAncre() {
+        const hash = String(window.location.hash || '');
+        if (hash.indexOf('#oeuvre-') !== 0) return;
+        let id = hash.slice(1);
+        try { id = decodeURIComponent(id); } catch (e) { /* hash déjà décodé */ }
+        const cible = document.getElementById(id);
+        if (!cible) return;
+        // Cible = carte de galerie uniquement (jamais un autre élément du site).
+        if (!cible.classList.contains('gallery-item')) return;
+        cible.scrollIntoView({ block: 'start' });
+        mettreEnEvidenceAncre(cible);
+    }
+
+    window.addEventListener('hashchange', allerVersAncre);
 
     // La grille tarifaire arrive de façon asynchrone : on rend la galerie dès
     // qu'elle est disponible. En test, `TARIFS_SITE` est préchargé (rendu synchrone).
@@ -1499,17 +1535,17 @@
     const lightboxCaption = document.getElementById('lightbox-caption');
     const lightboxClose = document.getElementById('lightbox-close');
 
-    // Clic sur une image de la galerie → ouvrir le lightbox
+    // Clic sur une image (ou sa zone dédiée) → ouvrir le lightbox.
+    // Tout le reste (sélecteurs, libellés, CTA, textes) est exclu.
     document.getElementById('gallery-grid').addEventListener('click', function(e) {
-        const galleryItem = e.target.closest('.gallery-item');
-        if (!galleryItem) return;
+        const zoneImage = e.target.closest('.gallery-image');
+        if (!zoneImage) return;
+        if (e.target.closest('.gallery-options, .gallery-action')) return;
 
-        // Ne pas ouvrir le lightbox si on clique sur le bouton "Commander"
-        if (e.target.closest('.gallery-action')) return;
-
-        const imgEl = galleryItem.querySelector('.gallery-image img');
+        const imgEl = zoneImage.querySelector('img');
         if (!imgEl) return; // pas d'image (produit avec fallback emoji)
 
+        const galleryItem = zoneImage.closest('.gallery-item');
         const title = galleryItem.querySelector('.gallery-info h4')?.textContent || '';
 
         lightboxImg.src = imgEl.src;
