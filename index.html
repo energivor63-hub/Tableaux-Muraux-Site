@@ -29,6 +29,40 @@
     <meta name="description" content="Tableaux Muraux - Tableaux muraux artisanaux créés par IA et fabriqués à la main à Marrakech. Impression premium sur bâche premium et toile canvas.">
     <meta name="keywords" content="tableau mural marrakech, art mural maroc, canvas premium, cadre bois artisanal, idée cadeau marrakech, décoration murale, art IA">
     <meta name="author" content="Tableaux Muraux">
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         MESURE — GA4 (LOT P1-TRACKING-01) : chargeur CANONIQUE gtag.js.
+         AUCUN conteneur de balises (chargeur GTM) sur cette page :
+         mesure directe, sans CMP (décision opérateur).
+         ═══════════════════════════════════════════════════════════════ -->
+    <script id="ga4-chargeur" async src="https://www.googletagmanager.com/gtag/js?id=G-BP8100DQ8B"></script>
+    <script id="ga4-bootstrap">
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-BP8100DQ8B');
+    </script>
+
+    <!-- MESURE — Meta Pixel : correspondance avancée automatique DÉSACTIVÉE
+         (décision opérateur : fbq('set', 'autoConfig', false, …) AVANT init). -->
+    <!-- Meta Pixel Code -->
+    <script id="meta-pixel">
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('set', 'autoConfig', false, '4010403609112081');
+    fbq('init', '4010403609112081');
+    fbq('track', 'PageView');
+    </script>
+    <!-- End Meta Pixel Code -->
+    <!-- Le repli <noscript> du pixel est dans <body> : un <img> dans <head>
+         forcerait la fermeture du <head> et déplacerait les styles. -->
+
     <link rel="canonical" href="https://energivor63-hub.github.io/Tableaux-Muraux-Site/">
     <meta property="og:title" content="Tableaux Muraux - Art Mural Artisanal">
     <meta property="og:description" content="Tableaux muraux uniques, co-créés par IA et fabriqués à la main à Marrakech">
@@ -523,6 +557,10 @@
     </style>
 </head>
 <body data-page="home">
+    <!-- Repli sans JavaScript du Meta Pixel (même événement PageView). -->
+    <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=4010403609112081&ev=PageView&noscript=1"
+    /></noscript>
     <!-- Navigation -->
     <nav>
         <div class="container">
@@ -793,6 +831,8 @@
         <div class="lightbox-caption" id="lightbox-caption"></div>
     </div>
 
+    <!-- Mesure : lecture des UTM + émission view_item / select_item / whatsapp_click -->
+    <script src="tracking.js"></script>
     <!-- Fichier de contenu modifiable (P2a D10 : ?v=hash-court anti-cache) -->
     <script src="contenu.js?v=703ea5d3"></script>
     <!-- Listes runtime (types/montages/triptyques) + slug canonique, dérivés de contenu.js. -->
@@ -1261,6 +1301,10 @@
         document.querySelectorAll('.gallery-item').forEach((carte) => {
             const produit = produitParIndex.get(Number(carte.dataset.index));
             if (!produit) return;
+            // Slug de l'œuvre (implémentation unique : catalogue-meta.js).
+            const fiche = ficheParIndex.get(Number(carte.dataset.index));
+            const slug = fiche ? fiche.slug : String(carte.id || '').replace(/^oeuvre-/, '');
+            const suivi = window.Suivi || null;
 
             // Le bloc sélecteurs (labels, selects, option triptyque) ne doit
             // JAMAIS propager un clic vers le lightbox de la galerie.
@@ -1281,13 +1325,35 @@
             carte.querySelectorAll('.opt-format, .opt-support, .opt-finition, .opt-triptyque-case')
                 .forEach((el) => el.addEventListener('change', majPrix));
 
+            // Mesure : variante choisie sur l'œuvre (format / support / finition).
+            carte.querySelectorAll('.opt-format, .opt-support, .opt-finition')
+                .forEach((el) => el.addEventListener('change', () => {
+                    if (!suivi) return;
+                    const choix = optionsDeCarte(carte);
+                    suivi.selectItem({
+                        slug: slug,
+                        format: choix.formatId,
+                        support: choix.support,
+                        finition: choix.finition
+                    });
+                }));
+
             carte.querySelector('.gallery-action').addEventListener('click', (e) => {
                 e.stopPropagation();
                 let message;
-                if (tarifs && !Prix.estIncertaine(produit)) {
+                const surGrille = tarifs && !Prix.estIncertaine(produit);
+                if (surGrille) {
                     message = Prix.messageOffre(produit, tarifs, optionsDeCarte(carte));
                 } else {
                     message = `Je suis intéressé(e) par le tableau "${produit.nom}". Pouvez-vous me donner plus d'informations ?`;
+                }
+                // Mesure AVANT l'ouverture : un bloqueur de pop-up ne perd pas l'événement.
+                if (suivi) {
+                    let montant = null;
+                    if (surGrille) {
+                        try { montant = Prix.calculerPrix(tarifs, optionsDeCarte(carte)).montant; } catch (err) { montant = null; }
+                    }
+                    suivi.whatsappClick({ slug: slug, montant: montant });
                 }
                 // UN SEUL encodeURIComponent : buildWhatsAppLink.
                 window.open(buildWhatsAppLink(message), '_blank');
@@ -1320,6 +1386,11 @@
         if (!cible.classList.contains('gallery-item')) return;
         cible.scrollIntoView({ block: 'start' });
         mettreEnEvidenceAncre(cible);
+        // Mesure : arrivée directe sur une œuvre (pin Pinterest ?utm_…#oeuvre-<slug>).
+        if (window.Suivi) {
+            const titre = cible.querySelector('.gallery-info h4');
+            window.Suivi.viewItem({ slug: id.replace(/^oeuvre-/, ''), nom: titre ? titre.textContent : '' });
+        }
     }
 
     window.addEventListener('hashchange', allerVersAncre);
@@ -1423,6 +1494,28 @@
     document.getElementById('whatsapp-logo-path').setAttribute('d', CONTENU_SITE.whatsappLogoSVG);
     floatBtn.target = '_blank';
     floatBtn.rel = 'noopener';
+
+    // ═══ MESURE — CTA WHATSAPP GÉNÉRIQUES (hero, contact, footer, bouton flottant) ═══
+    // Délégation en capture : l'événement part AVANT la navigation / l'ouverture.
+    document.addEventListener('click', (e) => {
+        const cible = (e.target && e.target.closest) ? e.target.closest('a[href*="wa.me"], #btn-commander-whatsapp') : null;
+        if (!cible) return;
+        if (cible.closest('.gallery-item')) return; // déjà compté avec le slug + montant de l'œuvre
+        if (!window.Suivi) return;
+        window.Suivi.whatsappClick({ slug: 'accueil', montant: montantOffreReference() });
+    }, true);
+
+    /** Montant de l'offre de référence affichée — montant des CTA génériques. */
+    function montantOffreReference() {
+        const grille = (typeof Tarifs !== 'undefined' && typeof Tarifs.actuels === 'function') ? Tarifs.actuels() : null;
+        if (!grille) return null;
+        try {
+            const reference = Object.assign({}, Prix.optionsReference(grille), { triptyque: false });
+            return Prix.calculerPrix(grille, reference).montant;
+        } catch (err) {
+            return null;
+        }
+    }
 
     // ═══ MOBILE MENU ═══
     document.getElementById('mobile-menu').addEventListener('click', () => {
@@ -1547,6 +1640,14 @@
 
         const galleryItem = zoneImage.closest('.gallery-item');
         const title = galleryItem.querySelector('.gallery-info h4')?.textContent || '';
+
+        // Mesure : œuvre réellement ouverte en plein écran (une fois par slug).
+        if (window.Suivi) {
+            window.Suivi.viewItem({
+                slug: String(galleryItem.id || '').replace(/^oeuvre-/, ''),
+                nom: title
+            });
+        }
 
         lightboxImg.src = imgEl.src;
         lightboxImg.alt = imgEl.alt || title;

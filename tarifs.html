@@ -6,6 +6,40 @@
     <title>Tarifs 2026 — Tableaux Muraux | Grille publique</title>
     <meta name="description" content="Grille tarifaire publique Tableaux Muraux : 6 formats, bâche premium ou toile canvas, tendu sur châssis ou cadre américain pin. Prix calculés en direct, commande WhatsApp.">
     <meta name="robots" content="index, follow">
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         MESURE — GA4 (LOT P1-TRACKING-01) : chargeur CANONIQUE gtag.js.
+         AUCUN conteneur de balises (chargeur GTM) sur cette page :
+         mesure directe, sans CMP (décision opérateur).
+         ═══════════════════════════════════════════════════════════════ -->
+    <script id="ga4-chargeur" async src="https://www.googletagmanager.com/gtag/js?id=G-BP8100DQ8B"></script>
+    <script id="ga4-bootstrap">
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', 'G-BP8100DQ8B');
+    </script>
+
+    <!-- MESURE — Meta Pixel : correspondance avancée automatique DÉSACTIVÉE
+         (décision opérateur : fbq('set', 'autoConfig', false, …) AVANT init). -->
+    <!-- Meta Pixel Code -->
+    <script id="meta-pixel">
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('set', 'autoConfig', false, '4010403609112081');
+    fbq('init', '4010403609112081');
+    fbq('track', 'PageView');
+    </script>
+    <!-- End Meta Pixel Code -->
+    <!-- Le repli <noscript> du pixel est dans <body> : un <img> dans <head>
+         forcerait la fermeture du <head> et déplacerait les styles. -->
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -67,6 +101,10 @@
     </style>
 </head>
 <body>
+    <!-- Repli sans JavaScript du Meta Pixel (même événement PageView). -->
+    <noscript><img height="1" width="1" style="display:none"
+    src="https://www.facebook.com/tr?id=4010403609112081&ev=PageView&noscript=1"
+    /></noscript>
     <nav>
         <div class="container">
             <a href="index.html" class="logo">Tableaux <span>Muraux</span></a>
@@ -116,6 +154,8 @@
         </div>
     </footer>
 
+    <!-- Mesure : lecture des UTM + émission whatsapp_click / select_item -->
+    <script src="tracking.js"></script>
     <script src="contenu.js"></script>
     <script src="tarifs-loader.js"></script>
     <script src="prix.js"></script>
@@ -146,8 +186,10 @@
                         + '<td class="prix prix-unitaire">' + unitaire.montant + ' MAD</td>'
                         + '<td class="prix prix-triptyque">' + triptyque.montant + ' MAD</td>'
                         + '<td class="cta">'
-                        + '<a href="' + lienWhatsApp(messageUnitaire) + '" target="_blank" rel="noopener">Commander</a>'
-                        + '<a class="secondaire" href="' + lienWhatsApp(messageTriptyque) + '" target="_blank" rel="noopener">Triptyque</a>'
+                        + '<a href="' + lienWhatsApp(messageUnitaire) + '" target="_blank" rel="noopener"'
+                        + ' data-montant="' + unitaire.montant + '" data-offre="unitaire">Commander</a>'
+                        + '<a class="secondaire" href="' + lienWhatsApp(messageTriptyque) + '" target="_blank" rel="noopener"'
+                        + ' data-montant="' + triptyque.montant + '" data-offre="triptyque">Triptyque</a>'
                         + '</td></tr>'
                     );
                 });
@@ -157,6 +199,34 @@
                 + '<div class="table-wrap"><table>'
                 + '<thead><tr><th>Support</th><th>Finition</th><th>1 panneau</th><th>Triptyque (3 panneaux)</th><th></th></tr></thead>'
                 + '<tbody>' + lignes.join('') + '</tbody></table></div></section>';
+        }
+
+        /**
+         * Mesure des CTA de la grille : la combinaison (format/support/finition)
+         * EST la sélection de l'internaute ⇒ select_item, puis whatsapp_click
+         * avec le montant exact de l'offre cliquée (unitaire ou triptyque).
+         */
+        function brancherMesureGrille() {
+            var matrice = document.getElementById('matrice');
+            if (!matrice || matrice.dataset.mesure === '1') return;
+            matrice.dataset.mesure = '1';
+            matrice.addEventListener('click', function (e) {
+                var lien = e.target && e.target.closest ? e.target.closest('a[data-montant]') : null;
+                if (!lien || !window.Suivi) return;
+                var section = lien.closest('.format');
+                var ligne = lien.closest('tr');
+                var choix = {
+                    slug: 'tarifs',
+                    format: section ? section.dataset.format : '',
+                    support: ligne ? ligne.dataset.support : '',
+                    finition: ligne ? ligne.dataset.finition : ''
+                };
+                window.Suivi.selectItem(choix);
+                window.Suivi.whatsappClick(Object.assign({}, choix, {
+                    montant: Number(lien.dataset.montant),
+                    offre: lien.dataset.offre || ''
+                }));
+            });
         }
 
         Tarifs.charger('tarifs.json').then(function (tarifs) {
@@ -171,6 +241,7 @@
                 return '<li>' + texte + '</li>';
             }).join('');
             if (etat) etat.remove();
+            brancherMesureGrille();
         }).catch(function (err) {
             if (etat) etat.textContent = 'Grille momentanément indisponible — contactez l’atelier sur WhatsApp.';
             console.error('[tarifs] grille indisponible :', err && err.message ? err.message : err);
